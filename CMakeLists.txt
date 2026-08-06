@@ -16,6 +16,9 @@ set(BPX_SDK_RECOVERED_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/joint_level_control.cpp"
 )
 
+option(BPX_SDK_BUILD_DIFFERENTIAL_TESTS
+    "Build Linux differential tests against recovered and shipped shared libraries" ON)
+
 set(BPX_SDK_USE_RECOVERED_SOURCES ON)
 foreach(BPX_SDK_RECOVERED_SOURCE IN LISTS BPX_SDK_RECOVERED_SOURCES)
     if(NOT EXISTS "${BPX_SDK_RECOVERED_SOURCE}")
@@ -32,6 +35,17 @@ if(BPX_SDK_USE_RECOVERED_SOURCES)
         "${CMAKE_CURRENT_LIST_DIR}/include"
     )
     target_link_libraries(bpx_sdk PUBLIC Threads::Threads)
+
+    add_library(bpx_sdk_recovered SHARED
+        ${BPX_SDK_RECOVERED_SOURCES}
+    )
+    target_include_directories(bpx_sdk_recovered PUBLIC
+        "${CMAKE_CURRENT_LIST_DIR}/include"
+    )
+    target_link_libraries(bpx_sdk_recovered PUBLIC Threads::Threads)
+    set_target_properties(bpx_sdk_recovered PROPERTIES
+        OUTPUT_NAME "bpx_sdk_recovered"
+    )
 else()
     add_library(bpx_sdk SHARED IMPORTED)
 endif()
@@ -101,6 +115,33 @@ else()
         IMPORTED_LOCATION "${BPX_SDK_IMPORT_LIBRARY_PATH}"
     )
 endif()
+endif()
+
+if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND UNIX AND NOT APPLE)
+    if(NOT BPX_SDK_USE_RECOVERED_SOURCES)
+        message(FATAL_ERROR "Differential tests require recovered sources to be available")
+    endif()
+    if(NOT BPX_SDK_IMPORT_LIBRARY_PATH)
+        string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" BPX_SDK_DIFF_ARCH)
+        if(BPX_SDK_DIFF_ARCH MATCHES "^(amd64|x64)$")
+            set(BPX_SDK_DIFF_ARCH x86_64)
+        elseif(BPX_SDK_DIFF_ARCH STREQUAL "arm64")
+            set(BPX_SDK_DIFF_ARCH aarch64)
+        endif()
+        set(BPX_SDK_IMPORT_LIBRARY_PATH
+            "${CMAKE_CURRENT_LIST_DIR}/lib/libbpx_sdk_${BPX_SDK_DIFF_ARCH}.so"
+        )
+    endif()
+    if(NOT BPX_SDK_IMPORT_LIBRARY_PATH)
+        message(FATAL_ERROR "Differential tests require a shipped shared library for the host architecture")
+    endif()
+    enable_testing()
+    add_library(bpx_sdk_precompiled SHARED IMPORTED GLOBAL)
+    set_target_properties(bpx_sdk_precompiled PROPERTIES
+        IMPORTED_LOCATION "${BPX_SDK_IMPORT_LIBRARY_PATH}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include"
+        INTERFACE_LINK_LIBRARIES Threads::Threads
+    )
 endif()
 
 function(add_bpx_sdk_example target source)

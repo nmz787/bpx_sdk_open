@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 
 namespace bpx_sdk {
 
@@ -12,8 +13,11 @@ public:
     std::array<float, 12> kd{};
     std::array<float, 12> vel{};
     std::array<float, 12> tff{};
-    float high_rate_joint_timestamp = 0.0f;
-    uint32_t high_rate_joint_seq = 0;
+    std::array<float, 12> observed_joint_pos{};
+    std::array<float, 12> observed_joint_vel{};
+    std::array<float, 12> observed_joint_tau{};
+    std::optional<float> high_rate_joint_timestamp;
+    std::optional<uint32_t> high_rate_joint_seq;
 };
 
 JointLevelControl::JointLevelControl()
@@ -35,12 +39,11 @@ bool JointLevelControl::setJointCommand(const std::array<float, 12>& kp,
     impl_->kd = kd;
     impl_->vel = vel;
     impl_->tff = tff;
-    ++impl_->high_rate_joint_seq;
     return true;
 }
 
 bool JointLevelControl::setJointKp(const std::array<float, 12>& kp) { impl_->kp = kp; return true; }
-bool JointLevelControl::setJointPosition(const std::array<float, 12>& pos) { impl_->pos = pos; ++impl_->high_rate_joint_seq; return true; }
+bool JointLevelControl::setJointPosition(const std::array<float, 12>& pos) { impl_->pos = pos; return true; }
 bool JointLevelControl::setJointKd(const std::array<float, 12>& kd) { impl_->kd = kd; return true; }
 bool JointLevelControl::setJointVelocity(const std::array<float, 12>& vel) { impl_->vel = vel; return true; }
 bool JointLevelControl::setJointTorqueFeedForward(const std::array<float, 12>& tff) { impl_->tff = tff; return true; }
@@ -51,25 +54,24 @@ bool JointLevelControl::setZeroJointCommand() {
     impl_->kd.fill(0.0f);
     impl_->vel.fill(0.0f);
     impl_->tff.fill(0.0f);
-    ++impl_->high_rate_joint_seq;
     return true;
 }
 
 bool JointLevelControl::getJointPositionHighRate(float joint_pos[12]) const {
-    if (!joint_pos) return false;
-    std::copy(impl_->pos.begin(), impl_->pos.end(), joint_pos);
+    if (!joint_pos || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_joint_pos.begin(), impl_->observed_joint_pos.end(), joint_pos);
     return true;
 }
 
 bool JointLevelControl::getJointVelocityHighRate(float joint_vel[12]) const {
-    if (!joint_vel) return false;
-    std::copy(impl_->vel.begin(), impl_->vel.end(), joint_vel);
+    if (!joint_vel || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_joint_vel.begin(), impl_->observed_joint_vel.end(), joint_vel);
     return true;
 }
 
 bool JointLevelControl::getJointTorqueHighRate(float joint_tau[12]) const {
-    if (!joint_tau) return false;
-    std::copy(impl_->tff.begin(), impl_->tff.end(), joint_tau);
+    if (!joint_tau || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_joint_tau.begin(), impl_->observed_joint_tau.end(), joint_tau);
     return true;
 }
 
@@ -79,14 +81,14 @@ bool JointLevelControl::getImuAccHighRate(float acc[3]) const { return getImuAcc
 bool JointLevelControl::getImuOmegaHighRate(float omega[3]) const { return getImuOmega(omega); }
 
 bool JointLevelControl::getJointStateTimestampHighRate(float* time_stamp) const {
-    if (!time_stamp) return false;
-    *time_stamp = impl_->high_rate_joint_timestamp;
+    if (!time_stamp || !impl_->high_rate_joint_timestamp) return false;
+    *time_stamp = *impl_->high_rate_joint_timestamp;
     return true;
 }
 
 bool JointLevelControl::getJointStateSeqHighRate(uint32_t* seq) const {
-    if (!seq) return false;
-    *seq = impl_->high_rate_joint_seq;
+    if (!seq || !impl_->high_rate_joint_seq) return false;
+    *seq = *impl_->high_rate_joint_seq;
     return true;
 }
 
