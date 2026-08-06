@@ -10,7 +10,33 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
-add_library(bpx_sdk SHARED IMPORTED)
+set(BPX_SDK_RECOVERED_SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/src/request_robot_state.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/motion_level_control.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/joint_level_control.cpp"
+)
+
+set(BPX_SDK_USE_RECOVERED_SOURCES OFF)
+foreach(BPX_SDK_RECOVERED_SOURCE IN LISTS BPX_SDK_RECOVERED_SOURCES)
+    if(EXISTS "${BPX_SDK_RECOVERED_SOURCE}")
+        set(BPX_SDK_USE_RECOVERED_SOURCES ON)
+    else()
+        set(BPX_SDK_USE_RECOVERED_SOURCES OFF)
+        break()
+    endif()
+endforeach()
+
+if(BPX_SDK_USE_RECOVERED_SOURCES)
+    add_library(bpx_sdk STATIC
+        ${BPX_SDK_RECOVERED_SOURCES}
+    )
+    target_include_directories(bpx_sdk PUBLIC
+        "${CMAKE_CURRENT_LIST_DIR}/include"
+    )
+    target_link_libraries(bpx_sdk PUBLIC Threads::Threads)
+else()
+    add_library(bpx_sdk SHARED IMPORTED)
+endif()
 
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" BPX_SDK_ARCH)
 if(BPX_SDK_ARCH MATCHES "^(amd64|x64)$")
@@ -52,10 +78,11 @@ foreach(BPX_SDK_IMPORT_LIBRARY_CANDIDATE IN LISTS BPX_SDK_IMPORT_LIBRARY_CANDIDA
     endif()
 endforeach()
 
-set_target_properties(bpx_sdk PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include"
-    INTERFACE_LINK_LIBRARIES Threads::Threads
-)
+if(NOT BPX_SDK_USE_RECOVERED_SOURCES)
+    set_target_properties(bpx_sdk PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include"
+        INTERFACE_LINK_LIBRARIES Threads::Threads
+    )
 
 if(WIN32)
     if(NOT BPX_SDK_RUNTIME_LIBRARY_PATH)
@@ -75,6 +102,7 @@ else()
     set_target_properties(bpx_sdk PROPERTIES
         IMPORTED_LOCATION "${BPX_SDK_IMPORT_LIBRARY_PATH}"
     )
+endif()
 endif()
 
 function(add_bpx_sdk_example target source)
