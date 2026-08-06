@@ -127,8 +127,10 @@ void RequestRobotState::setTcpLocalPort(uint16_t port) { impl_->tcp_local_port =
 void RequestRobotState::setSessionId(uint16_t session_id) { impl_->session_id = session_id; }
 
 void RequestRobotState::setRobotIp(const char* ip) {
-    const char* resolved = (ip && ip[0] != '\0') ? ip : DEFAULT_SERVER_IP;
-    std::snprintf(impl_->robot_ip, sizeof(impl_->robot_ip), "%s", resolved);
+    if (!ip || ip[0] == '\0') {
+        return;
+    }
+    std::snprintf(impl_->robot_ip, sizeof(impl_->robot_ip), "%s", ip);
 }
 
 bool RequestRobotState::queryRobotVersion(uint16_t* major, uint16_t* minor, uint16_t* patch,
@@ -298,7 +300,7 @@ std::optional<uint32_t> RequestRobotState::getOdometryTimestampValue() const { r
 std::optional<uint32_t> RequestRobotState::getMotionStateTimestampValue() const { return impl_->motion_state_timestamp; }
 std::optional<uint32_t> RequestRobotState::getBatteryTimestampValue() const { return impl_->battery_timestamp; }
 
-uint8_t RequestRobotState::hostServerMode() const { return 0; }
+uint8_t RequestRobotState::hostServerMode() const { return 1; }
 const char* RequestRobotState::robotIp() const { return impl_->robot_ip; }
 void RequestRobotState::setCurrentGaitState(MotionGait gait, int8_t sub_gait) {
     impl_->last_gait = impl_->current_gait;

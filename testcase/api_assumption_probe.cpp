@@ -15,13 +15,9 @@ public:
 };
 
 class MotionLevelControlProbe : public bpx_sdk::MotionLevelControl {
-public:
-    using bpx_sdk::MotionLevelControl::hostServerMode;
 };
 
 class JointLevelControlProbe : public bpx_sdk::JointLevelControl {
-public:
-    using bpx_sdk::JointLevelControl::hostServerMode;
 };
 
 void printBool(const char* key, bool value) {
@@ -52,9 +48,6 @@ int main() {
     const std::array<float, 12> zeros{};
 
     printInt("request.hostServerMode", state.hostServerMode());
-    printInt("motion.hostServerMode", motion.hostServerMode());
-    printInt("joint.hostServerMode", joint.hostServerMode());
-
     std::cout << "request.defaultRobotIp=" << state.robotIp() << '\n';
     state.setRobotIp("192.168.0.42");
     std::cout << "request.customRobotIp=" << state.robotIp() << '\n';
@@ -63,8 +56,6 @@ int main() {
 
     printBool("request.getRobotVersion.beforeConnect",
               state.getRobotVersion(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr));
-    printBool("request.queryRobotVersion.beforeConnect",
-              state.queryRobotVersion(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr));
 
     printBool("request.getJointPosition.null", state.getJointPosition(nullptr));
     printBool("request.getJointPosition.fresh", state.getJointPosition(joint_array));
