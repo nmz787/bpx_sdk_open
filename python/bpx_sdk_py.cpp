@@ -220,7 +220,7 @@ PyObject* state_float(PyObject* self, bool (RequestRobotState::*getter)(float*) 
     return PyFloat_FromDouble(value);
 }
 
-PyObject* state_get_robot_version(PyObject* self, PyObject*) {
+PyObject* state_robot_version(PyObject* self, bool query) {
     RequestRobotState* cpp = state_cpp(self);
     if (!cpp) {
         return nullptr;
@@ -231,7 +231,10 @@ PyObject* state_get_robot_version(PyObject* self, PyObject*) {
     uint32_t commit = 0;
     uint32_t build_date = 0;
     uint32_t build_time = 0;
-    if (!cpp->getRobotVersion(&major, &minor, &patch, &commit, &build_date, &build_time)) {
+    const bool ok = query
+        ? cpp->queryRobotVersion(&major, &minor, &patch, &commit, &build_date, &build_time)
+        : cpp->getRobotVersion(&major, &minor, &patch, &commit, &build_date, &build_time);
+    if (!ok) {
         Py_RETURN_NONE;
     }
 
@@ -258,6 +261,14 @@ PyObject* state_get_robot_version(PyObject* self, PyObject*) {
         PyTuple_SET_ITEM(tuple, i, values[i]);
     }
     return tuple;
+}
+
+PyObject* state_get_robot_version(PyObject* self, PyObject*) {
+    return state_robot_version(self, false);
+}
+
+PyObject* state_query_robot_version(PyObject* self, PyObject*) {
+    return state_robot_version(self, true);
 }
 
 PyObject* request_new(PyTypeObject* type, PyObject*, PyObject*) {
@@ -553,11 +564,6 @@ PyObject* motion_set_velocity(PyObject* self, PyObject* args) {
 MOTION_BOOL_METHOD(motion_set_stand_up, setStandUp)
 MOTION_BOOL_METHOD(motion_set_sit_down, setSitDown)
 MOTION_BOOL_METHOD(motion_set_damping, setDamping)
-PyObject* motion_set_upright(PyObject*, PyObject*) {
-    PyErr_SetString(PyExc_NotImplementedError,
-                    "setUpright is declared in the public header but is not exported by the bundled BPX SDK shared library");
-    return nullptr;
-}
 
 PyObject* joint_set_joint_command(PyObject* self, PyObject* args) {
     JointLevelControl* cpp = joint_cpp(self);
@@ -696,6 +702,7 @@ PyMethodDef StateMethods[] = {
     METHOD("setTcpLocalPort", state_set_tcp_local_port, METH_VARARGS, nullptr),
     METHOD("setSessionId", state_set_session_id, METH_VARARGS, nullptr),
     METHOD("getRobotVersion", state_get_robot_version, METH_NOARGS, nullptr),
+    METHOD("queryRobotVersion", state_query_robot_version, METH_NOARGS, nullptr),
     METHOD("getJointPosition", state_get_joint_position, METH_NOARGS, nullptr),
     METHOD("getJointVelocity", state_get_joint_velocity, METH_NOARGS, nullptr),
     METHOD("getJointTorque", state_get_joint_torque, METH_NOARGS, nullptr),
@@ -733,6 +740,7 @@ PyMethodDef MotionMethods[] = {
     METHOD("setTcpLocalPort", state_set_tcp_local_port, METH_VARARGS, nullptr),
     METHOD("setSessionId", state_set_session_id, METH_VARARGS, nullptr),
     METHOD("getRobotVersion", state_get_robot_version, METH_NOARGS, nullptr),
+    METHOD("queryRobotVersion", state_query_robot_version, METH_NOARGS, nullptr),
     METHOD("getJointPosition", state_get_joint_position, METH_NOARGS, nullptr),
     METHOD("getJointVelocity", state_get_joint_velocity, METH_NOARGS, nullptr),
     METHOD("getJointTorque", state_get_joint_torque, METH_NOARGS, nullptr),
@@ -772,7 +780,6 @@ PyMethodDef MotionMethods[] = {
     METHOD("setStandUp", motion_set_stand_up, METH_NOARGS, nullptr),
     METHOD("setSitDown", motion_set_sit_down, METH_NOARGS, nullptr),
     METHOD("setDamping", motion_set_damping, METH_NOARGS, nullptr),
-    METHOD("setUpright", motion_set_upright, METH_NOARGS, nullptr),
     {nullptr, nullptr, 0, nullptr},
 };
 
@@ -787,6 +794,7 @@ PyMethodDef JointMethods[] = {
     METHOD("setTcpLocalPort", state_set_tcp_local_port, METH_VARARGS, nullptr),
     METHOD("setSessionId", state_set_session_id, METH_VARARGS, nullptr),
     METHOD("getRobotVersion", state_get_robot_version, METH_NOARGS, nullptr),
+    METHOD("queryRobotVersion", state_query_robot_version, METH_NOARGS, nullptr),
     METHOD("getJointPosition", state_get_joint_position, METH_NOARGS, nullptr),
     METHOD("getJointVelocity", state_get_joint_velocity, METH_NOARGS, nullptr),
     METHOD("getJointTorque", state_get_joint_torque, METH_NOARGS, nullptr),

@@ -104,6 +104,12 @@ This inventory focuses on demangled `bpx_sdk::*` symbols preserved in the unstri
 - `bpx_sdk::JointLevelControl::disconnect()`
 - `bpx_sdk::JointLevelControl::setZeroJointCommand()`
 - `bpx_sdk::JointLevelControl::setJointStateUploadPort(unsigned short)`
+- `bpx_sdk::JointLevelControl::setJointCommand(std::array<float, 12ul> const&, std::array<float, 12ul> const&, std::array<float, 12ul> const&, std::array<float, 12ul> const&, std::array<float, 12ul> const&)`
+- `bpx_sdk::JointLevelControl::setJointKp(std::array<float, 12ul> const&)`
+- `bpx_sdk::JointLevelControl::setJointPosition(std::array<float, 12ul> const&)`
+- `bpx_sdk::JointLevelControl::setJointKd(std::array<float, 12ul> const&)`
+- `bpx_sdk::JointLevelControl::setJointVelocity(std::array<float, 12ul> const&)`
+- `bpx_sdk::JointLevelControl::setJointTorqueFeedForward(std::array<float, 12ul> const&)`
 - `bpx_sdk::JointLevelControl::connect()`
 - `bpx_sdk::JointLevelControl::JointLevelControl()`
 - `bpx_sdk::JointLevelControl::~JointLevelControl()`
