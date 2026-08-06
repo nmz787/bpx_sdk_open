@@ -166,10 +166,3 @@ Even without debug sections, the binaries preserve enough metadata to support st
    - `RobotStateUdpReceiver`
 5. Use the Python binding at `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` to cross-check public API expectations.
 6. If available outside the repo, search for detached debug files, CI artifacts, release packages, or symbol bundles.
-
-## Branch / Visibility Note
-
-This note is being added on branch:
-- `copilot/check-debug-flags`
-
-That makes the findings visible as normal repository changes once committed and pushed through the task workflow.
