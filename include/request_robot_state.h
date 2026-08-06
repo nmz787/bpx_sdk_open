@@ -106,6 +106,7 @@ public:
 protected:
     virtual uint8_t hostServerMode() const;
     const char* robotIp() const;
+    void setCurrentGaitState(MotionGait gait, int8_t sub_gait = 0);
 
 private:
     class Impl;

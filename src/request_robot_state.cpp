@@ -294,5 +294,9 @@ std::optional<uint32_t> RequestRobotState::getBatteryTimestampValue() const { re
 
 uint8_t RequestRobotState::hostServerMode() const { return 0; }
 const char* RequestRobotState::robotIp() const { return impl_->robot_ip; }
+void RequestRobotState::setCurrentGaitState(MotionGait gait, int8_t sub_gait) {
+    impl_->current_gait = static_cast<uint8_t>(gait);
+    impl_->sub_gait = static_cast<uint8_t>(sub_gait);
+}
 
 }  // namespace bpx_sdk
