@@ -165,20 +165,34 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 ### Next
 
-- Recover or re-implement the internal transport/runtime pieces implied by the binary inventory, especially `JointCommandSender`, `JointStateReceiver`, `MotionCommandSender`, `TcpSubscribeClient`, and `RobotStateUdpReceiver`.
-- Replace current placeholder behavior in the recovered sources with packet/query logic, beginning with `queryRobotVersion(...)`, TCP subscription flow, and robot/joint state ingestion.
-- Extend parity checking beyond surface API assumptions so the recovered implementation can be exercised against both shipped shared libraries and architecture variants.
-- Use `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` as an additional compatibility check while filling in missing runtime behavior.
+- Replace the new in-process runtime scaffolding with real socket/protocol handling so the recovered transport classes can talk to hardware instead of only seeding simulated state.
+- Recover packet layouts and message framing in enough detail to parse real robot state uploads and serialize motion/joint command traffic.
+- Expand validation from recovered-only runtime smoke coverage to binary-vs-recovered behavioral checks that exercise connected flows where the shipped library is usable in CI.
+- Use `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` as an additional compatibility check while filling in the remaining runtime behavior.
 
 ## Recommended Next Steps
 
-1. Produce a complete symbol inventory for both architectures.
-2. Compare exported API symbols against the current public headers to identify any missing or drifted declarations.
-3. Build a translation-unit map from symbol groups.
-4. Disassemble selected internal classes:
+1. Produce a complete symbol inventory comparison for both architectures and flag any x86_64 vs. aarch64 drift.
+2. Disassemble the packet-heavy internal classes to recover concrete wire formats:
    - `JointCommandSender`
    - `MotionCommandSender`
    - `TcpSubscribeClient`
    - `RobotStateUdpReceiver`
-5. Use the Python binding at `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` to cross-check public API expectations.
-6. If available outside the repo, search for detached debug files, CI artifacts, release packages, or symbol bundles.
+3. Replace the recovered runtime scaffolding with actual socket send/receive loops and packet parsing once the wire format is known.
+4. Use the Python binding at `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` to cross-check public API expectations against the new connected-path behavior.
+5. If available outside the repo, search for detached debug files, CI artifacts, release packages, or symbol bundles.
+
+## iteration 3
+
+### Done
+
+- Added recovered transport/runtime scaffolding in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src` for `TcpSubscribeClient`, `RobotStateUdpReceiver`, `MotionCommandSender`, `JointCommandSender`, and `JointStateReceiver`, along with shared recovery packet/state structs in `recovery_runtime.{h,cpp}`.
+- Replaced the previous `queryRobotVersion(...)` placeholder with a recovered version-query path and updated `connect()` flows so connected objects now seed consistent cached robot state and version data.
+- Wired the motion-level and joint-level recovered implementations into the new runtime scaffolding so connected command flows now produce deterministic feedback for gait state, max-velocity state, and high-rate joint snapshots.
+- Extended validation with `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/recovered_runtime_probe.cpp` and made the differential test CMake setup more portable by switching the precompiled probe RPATH to `$<TARGET_FILE_DIR:bpx_sdk_precompiled>` and exposing `BPX_SDK_USE_RECOVERED_SOURCES` as a real option.
+
+### Next
+
+- Turn the current recovered scaffolding into real protocol-aware transport by recovering socket behavior, packet layouts, and multi-rate parsing from the shipped binaries.
+- Add cross-architecture recovery notes once the aarch64 symbol inventory and disassembly results are in hand.
+- Exercise the Python bindings against the connected recovered runtime to catch API mismatches outside the C++ probes.
