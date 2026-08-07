@@ -154,6 +154,22 @@ Even without debug sections, the binaries preserve enough metadata to support st
 4. transport-layer role identification
 5. targeted disassembly for behavioral reconstruction
 
+## iteration 2
+
+### Done
+
+- Produced a dedicated symbol inventory in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/SYMBOL_RECOVERY.md` covering public API symbols plus key internal transport classes recovered from the shipped binary.
+- Reconstructed the public implementation surface under `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src` with PIMPL-backed `RequestRobotState`, `MotionLevelControl`, and `JointLevelControl` source files that match the recovered class layout and exposed methods.
+- Added an API-behavior comparison harness in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/compare_api_assumptions.cmake` so recovered and precompiled probes can be checked for divergence.
+- Confirmed the current public headers under `/home/runner/work/bpx_sdk_open/bpx_sdk_open/include` remain aligned with the symbol-recovery findings, including the optional/array getter variants visible in the binary.
+
+### Next
+
+- Recover or re-implement the internal transport/runtime pieces implied by the binary inventory, especially `JointCommandSender`, `JointStateReceiver`, `MotionCommandSender`, `TcpSubscribeClient`, and `RobotStateUdpReceiver`.
+- Replace current placeholder behavior in the recovered sources with packet/query logic, beginning with `queryRobotVersion(...)`, TCP subscription flow, and robot/joint state ingestion.
+- Extend parity checking beyond surface API assumptions so the recovered implementation can be exercised against both shipped shared libraries and architecture variants.
+- Use `/home/runner/work/bpx_sdk_open/bpx_sdk_open/python/bpx_sdk_py.cpp` as an additional compatibility check while filling in missing runtime behavior.
+
 ## Recommended Next Steps
 
 1. Produce a complete symbol inventory for both architectures.
