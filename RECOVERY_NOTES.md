@@ -196,3 +196,17 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Turn the current recovered scaffolding into real protocol-aware transport by recovering socket behavior, packet layouts, and multi-rate parsing from the shipped binaries.
 - Add cross-architecture recovery notes once the aarch64 symbol inventory and disassembly results are in hand.
 - Exercise the Python bindings against the connected recovered runtime to catch API mismatches outside the C++ probes.
+
+## iteration 4
+
+### Done
+
+- Added Python recovered-runtime validation in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_recovered_runtime_probe.py` and wired it into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/CMakeLists.txt` so CTest now exercises the Python bindings against the connected recovered shared library.
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/setup.py` with `BPX_SDK_PYTHON_RUNTIME_LIBRARY` and `BPX_SDK_PYTHON_IMPORT_LIBRARY` overrides so the Python package can be built against `bpx_sdk_recovered` instead of only the shipped binary during recovery validation.
+- Compared exported `bpx_sdk::*` symbol inventories for `/home/runner/work/bpx_sdk_open/bpx_sdk_open/lib/libbpx_sdk_x86_64.so` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/lib/libbpx_sdk_aarch64.so`; both architectures currently expose the same 580 demangled symbols, so there is no exported-surface drift yet to explain.
+
+### Next
+
+- Recover the actual TCP/UDP wire formats used by `TcpSubscribeClient`, `RobotStateUdpReceiver`, `MotionCommandSender`, and `JointCommandSender` so the connected probes validate real packet parsing instead of seeded snapshots.
+- Expand the cross-architecture notes from symbol parity to packet-path disassembly and class-layout differences once the aarch64 transport routines are analyzed in detail.
+- If CI can host recovered and shipped runtimes side by side, add a differential Python probe that compares the recovered binding behavior with the precompiled library on the same API surface.

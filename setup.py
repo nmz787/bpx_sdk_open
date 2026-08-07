@@ -15,6 +15,13 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_MACOS_DEPLOYMENT_TARGET = "11.0"
 
 
+def optional_path_from_env(name):
+    value = os.environ.get(name)
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+
 def read_sdk_version():
     version_header = ROOT / "include" / "bpx_sdk_version.h"
     pattern = re.compile(r'^\s*#\s*define\s+BPX_SDK_PROJECT_VERSION\s+"([^"]+)"\s*$')
@@ -67,6 +74,8 @@ def macos_dylib_minos(dylib):
 ARCH = sdk_arch()
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
+OVERRIDE_RUNTIME_LIBRARY = optional_path_from_env("BPX_SDK_PYTHON_RUNTIME_LIBRARY")
+OVERRIDE_IMPORT_LIBRARY = optional_path_from_env("BPX_SDK_PYTHON_IMPORT_LIBRARY")
 
 if IS_WINDOWS and ARCH != "x86_64":
     raise RuntimeError("Windows Python bindings only support x86_64/64-bit Python")
@@ -83,17 +92,22 @@ if IS_MACOS:
     )
 
 if IS_WINDOWS:
-    SDK_RUNTIME_LIBRARY = ROOT / "bin" / f"bpx_sdk_{ARCH}.dll"
-    SDK_IMPORT_LIBRARY = ROOT / "lib" / f"bpx_sdk_{ARCH}.lib"
+    default_runtime_library = ROOT / "bin" / f"bpx_sdk_{ARCH}.dll"
+    default_import_library = ROOT / "lib" / f"bpx_sdk_{ARCH}.lib"
+    SDK_RUNTIME_LIBRARY = OVERRIDE_RUNTIME_LIBRARY or default_runtime_library
+    SDK_IMPORT_LIBRARY = OVERRIDE_IMPORT_LIBRARY or default_import_library
     if not SDK_RUNTIME_LIBRARY.exists():
         raise RuntimeError(f"No BPX SDK runtime DLL found for architecture: {ARCH}")
     if not SDK_IMPORT_LIBRARY.exists():
         raise RuntimeError(f"No BPX SDK import library found for architecture: {ARCH}")
 elif IS_MACOS:
-    SDK_RUNTIME_LIBRARY = ROOT / "lib" / f"libbpx_sdk_{ARCH}.dylib"
-    SDK_IMPORT_LIBRARY = SDK_RUNTIME_LIBRARY
+    default_runtime_library = ROOT / "lib" / f"libbpx_sdk_{ARCH}.dylib"
+    SDK_RUNTIME_LIBRARY = OVERRIDE_RUNTIME_LIBRARY or OVERRIDE_IMPORT_LIBRARY or default_runtime_library
+    SDK_IMPORT_LIBRARY = OVERRIDE_IMPORT_LIBRARY or SDK_RUNTIME_LIBRARY
     if not SDK_RUNTIME_LIBRARY.exists():
         raise RuntimeError(f"No BPX SDK dynamic library found for architecture: {ARCH}")
+    if not SDK_IMPORT_LIBRARY.exists():
+        raise RuntimeError(f"No BPX SDK import library found for architecture: {ARCH}")
     sdk_minos = macos_dylib_minos(SDK_RUNTIME_LIBRARY)
     if sdk_minos and macos_version_tuple(sdk_minos) > macos_version_tuple(
         os.environ["MACOSX_DEPLOYMENT_TARGET"]
@@ -104,10 +118,17 @@ elif IS_MACOS:
             "Rebuild or replace the SDK dylib with the same or lower deployment target."
         )
 else:
-    SDK_RUNTIME_LIBRARY = ROOT / "lib" / f"libbpx_sdk_{ARCH}.so"
-    SDK_IMPORT_LIBRARY = SDK_RUNTIME_LIBRARY
+    default_runtime_library = ROOT / "lib" / f"libbpx_sdk_{ARCH}.so"
+    SDK_RUNTIME_LIBRARY = OVERRIDE_RUNTIME_LIBRARY or OVERRIDE_IMPORT_LIBRARY or default_runtime_library
+    SDK_IMPORT_LIBRARY = OVERRIDE_IMPORT_LIBRARY or SDK_RUNTIME_LIBRARY
     if not SDK_RUNTIME_LIBRARY.exists():
         raise RuntimeError(f"No BPX SDK shared library found for architecture: {ARCH}")
+    if not SDK_IMPORT_LIBRARY.exists():
+        raise RuntimeError(f"No BPX SDK import library found for architecture: {ARCH}")
+
+USE_LIBRARY_OVERRIDE = (
+    OVERRIDE_RUNTIME_LIBRARY is not None or OVERRIDE_IMPORT_LIBRARY is not None
+)
 
 
 def copy_sdk_library(target_package_dir):
@@ -160,8 +181,9 @@ setup(
             "bpx_sdk._bpx_sdk",
             sources=["python/bpx_sdk_py.cpp"],
             include_dirs=["include"],
-            library_dirs=["lib"],
-            libraries=[f"bpx_sdk_{ARCH}"],
+            library_dirs=[] if USE_LIBRARY_OVERRIDE else ["lib"],
+            libraries=[] if USE_LIBRARY_OVERRIDE else [f"bpx_sdk_{ARCH}"],
+            extra_objects=[str(SDK_IMPORT_LIBRARY)] if USE_LIBRARY_OVERRIDE else [],
             language="c++",
             extra_compile_args=["/std:c++17"] if IS_WINDOWS else ["-std=c++17"],
             extra_link_args=extra_link_args(),

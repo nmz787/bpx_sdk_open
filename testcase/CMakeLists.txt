@@ -2,6 +2,8 @@ option(BPX_SDK_BUILD_HARDWARE_TESTS
     "Build interactive tests that move a real robot" OFF)
 
 if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_sdk_precompiled)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+
     add_executable(
         api_assumption_probe_recovered
         api_assumption_probe.cpp
@@ -50,6 +52,16 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
         NAME recovered_runtime_probe
         COMMAND $<TARGET_FILE:recovered_runtime_probe>
     )
+
+    if(Python3_Interpreter_FOUND)
+        add_test(
+            NAME python_recovered_runtime_probe
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_LIST_DIR}/python_recovered_runtime_probe.py"
+                "${CMAKE_CURRENT_LIST_DIR}/.."
+                "$<TARGET_FILE:bpx_sdk_recovered>"
+        )
+    endif()
 endif()
 
 if(BPX_SDK_BUILD_HARDWARE_TESTS)
