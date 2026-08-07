@@ -210,3 +210,19 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Recover the actual TCP/UDP wire formats used by `TcpSubscribeClient`, `RobotStateUdpReceiver`, `MotionCommandSender`, and `JointCommandSender` so the connected probes validate real packet parsing instead of seeded snapshots.
 - Expand the cross-architecture notes from symbol parity to packet-path disassembly and class-layout differences once the aarch64 transport routines are analyzed in detail.
 - If CI can host recovered and shipped runtimes side by side, add a differential Python probe that compares the recovered binding behavior with the precompiled library on the same API surface.
+
+## iteration 5
+
+### Done
+
+- Fixed `/home/runner/work/bpx_sdk_open/bpx_sdk_open/setup.py` to force rebuilding the Python extension during package builds, which prevents stale `build/` artifacts from silently relinking the Python wheel against the shipped `libbpx_sdk_x86_64.so` when `BPX_SDK_PYTHON_RUNTIME_LIBRARY` and `BPX_SDK_PYTHON_IMPORT_LIBRARY` point at `bpx_sdk_recovered`.
+- Added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_compare_api_assumptions.py` and wired it into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/CMakeLists.txt` so CTest now compares recovered and shipped Python bindings on the safe pre-connect API surface in the same run.
+- Tightened the recovered control-path behavior in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/motion_level_control.cpp` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_level_control.cpp` so pre-connect send-style APIs now report failure instead of optimistic success, matching the shipped library behavior exercised by the differential probes.
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/api_assumption_probe.cpp` to compare the pre-connect return values of representative motion and joint command APIs, closing a behavioral gap that the earlier C++ differential probe did not observe.
+- Expanded the transport recovery notes with packet-path findings from the shipped x86_64 and aarch64 binaries: `RobotStateUdpReceiver::parsePacket(...)` gates on a 12-byte `ClientUploadPacketHead` (`seq`, `timestamp_ms`, `payload_size`, `payload_type`), the current disassembly shows payload-type branches for `0x1000`, `0x0200`, `0x0050`, `0x0010`, and `0x0001`, and the analyzed transport classes still present the same exported method surface on both architectures.
+
+### Next
+
+- Recover the concrete payload layouts behind the identified upload packet types so `RobotStateUdpReceiver::parsePacket(...)` can populate real `RobotStateSnapshot` data instead of seeded defaults.
+- Disassemble `TcpSubscribeClient::sendRequest(...)`, `MotionCommandSender::sendPacket(...)`, and `JointCommandSender::send(...)` deeply enough to replace the current no-op send paths with real socket serialization.
+- Extend the Python differential probe from pre-connect behavior into connected-path checks once CI can safely host side-by-side recovered and shipped runtimes without hanging on hardware/network operations.

@@ -206,51 +206,55 @@ bool MotionLevelControl::setVelocity(float x, float y, float yaw) {
     impl_->velocity_x = x;
     impl_->velocity_y = y;
     impl_->velocity_yaw = yaw;
+    bool sent = false;
     if (impl_->sender) {
-        impl_->sender->sendVelocity(x, y, yaw);
+        sent = impl_->sender->sendVelocity(x, y, yaw);
     }
     if (isConnected()) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
     }
-    return true;
+    return sent;
 }
 
 bool MotionLevelControl::setStandUp() {
+    bool sent = false;
     if (impl_->sender) {
-        impl_->sender->sendStandUp();
+        sent = impl_->sender->sendStandUp();
     }
     if (isConnected()) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::StandingUp);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
     }
-    return true;
+    return sent;
 }
 
 bool MotionLevelControl::setSitDown() {
+    bool sent = false;
     if (impl_->sender) {
-        impl_->sender->sendSitDown();
+        sent = impl_->sender->sendSitDown();
     }
     if (isConnected()) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::SitDown);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
     }
-    return true;
+    return sent;
 }
 
 bool MotionLevelControl::setDamping() {
+    bool sent = false;
     if (impl_->sender) {
-        impl_->sender->sendDamping();
+        sent = impl_->sender->sendDamping();
     }
     if (isConnected()) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Passive);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
     }
-    return true;
+    return sent;
 }
 
 uint8_t MotionLevelControl::hostServerMode() const { return 1; }

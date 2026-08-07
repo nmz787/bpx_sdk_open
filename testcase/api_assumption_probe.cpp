@@ -85,18 +85,20 @@ int main() {
     motion.setWalk();
     motion.setBound();
     motion.setVelocityControlFlag(true);
-    motion.setVelocity(0.1f, 0.2f, 0.3f);
-    motion.setStandUp();
-    motion.setDamping();
+    printBool("motion.setVelocity.preConnect", motion.setVelocity(0.1f, 0.2f, 0.3f));
+    printBool("motion.setStandUp.preConnect", motion.setStandUp());
+    printBool("motion.setDamping.preConnect", motion.setDamping());
     printBool("motion.feedbackAfterCommands.state", motion.getCurrentMotionState(&byte));
     printBool("motion.feedbackAfterCommands.gait", motion.getCurrentGait(&byte));
     printBool("motion.feedbackAfterCommands.subGait", motion.getSubGait(&byte));
 
-    joint.setJointCommand(zeros, zeros, zeros, zeros, zeros);
-    joint.setJointPosition(zeros);
-    joint.setJointVelocity(zeros);
-    joint.setJointTorqueFeedForward(zeros);
-    joint.setZeroJointCommand();
+    printBool("joint.setJointCommand.preConnect",
+              joint.setJointCommand(zeros, zeros, zeros, zeros, zeros));
+    printBool("joint.setJointPosition.preConnect", joint.setJointPosition(zeros));
+    printBool("joint.setJointVelocity.preConnect", joint.setJointVelocity(zeros));
+    printBool("joint.setJointTorqueFeedForward.preConnect",
+              joint.setJointTorqueFeedForward(zeros));
+    printBool("joint.setZeroJointCommand.preConnect", joint.setZeroJointCommand());
     printBool("joint.highRatePosition.afterCommands", joint.getJointPositionHighRate(joint_array));
     printBool("joint.highRateVelocity.afterCommands", joint.getJointVelocityHighRate(joint_array));
     printBool("joint.highRateTorque.afterCommands", joint.getJointTorqueHighRate(joint_array));

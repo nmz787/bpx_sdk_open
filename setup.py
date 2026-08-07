@@ -163,6 +163,7 @@ class BuildPyWithSdkLibrary(build_py):
 
 class BuildExtWithSdkLibrary(build_ext):
     def run(self):
+        self.force = True
         super().run()
         for ext in self.extensions:
             ext_path = Path(self.get_ext_fullpath(ext.name))

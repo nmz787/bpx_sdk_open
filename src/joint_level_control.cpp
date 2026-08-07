@@ -106,8 +106,9 @@ bool JointLevelControl::setJointCommand(const std::array<float, 12>& kp,
         packet.tff = tff;
         impl_->sender->send(packet);
         impl_->refreshHighRateFeedback();
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool JointLevelControl::setJointKp(const std::array<float, 12>& kp) { impl_->kp = kp; return true; }
@@ -117,8 +118,9 @@ bool JointLevelControl::setJointPosition(const std::array<float, 12>& pos) {
         JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
         impl_->sender->send(packet);
         impl_->refreshHighRateFeedback();
+        return true;
     }
-    return true;
+    return false;
 }
 bool JointLevelControl::setJointKd(const std::array<float, 12>& kd) { impl_->kd = kd; return true; }
 bool JointLevelControl::setJointVelocity(const std::array<float, 12>& vel) {
@@ -127,8 +129,9 @@ bool JointLevelControl::setJointVelocity(const std::array<float, 12>& vel) {
         JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
         impl_->sender->send(packet);
         impl_->refreshHighRateFeedback();
+        return true;
     }
-    return true;
+    return false;
 }
 bool JointLevelControl::setJointTorqueFeedForward(const std::array<float, 12>& tff) {
     impl_->tff = tff;
@@ -136,8 +139,9 @@ bool JointLevelControl::setJointTorqueFeedForward(const std::array<float, 12>& t
         JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
         impl_->sender->send(packet);
         impl_->refreshHighRateFeedback();
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool JointLevelControl::setZeroJointCommand() {
@@ -149,8 +153,9 @@ bool JointLevelControl::setZeroJointCommand() {
     if (impl_->sender && impl_->sender->isOpen()) {
         impl_->sender->sendZero();
         impl_->refreshHighRateFeedback();
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool JointLevelControl::getJointPositionHighRate(float joint_pos[12]) const {
