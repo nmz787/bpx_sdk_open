@@ -43,12 +43,74 @@ uint32_t EncodeCommitHash(const char* commit_hash) {
     return value;
 }
 
+int parseTwoDigits(const char tens, const char ones) {
+    if (tens < '0' || tens > '9' || ones < '0' || ones > '9') {
+        return 0;
+    }
+    return (tens - '0') * 10 + (ones - '0');
+}
+
+int parseDay(const char* date) {
+    if (!date) {
+        return 0;
+    }
+    if (date[4] == ' ') {
+        return parseTwoDigits('0', date[5]);
+    }
+    return parseTwoDigits(date[4], date[5]);
+}
+
+int parseYear(const char* date) {
+    if (!date) {
+        return 0;
+    }
+    return (date[7] - '0') * 1000 +
+           (date[8] - '0') * 100 +
+           (date[9] - '0') * 10 +
+           (date[10] - '0');
+}
+
+int parseMonth(const char* date) {
+    if (!date) {
+        return 0;
+    }
+    if (std::strncmp(date, "Jan", 3) == 0) return 1;
+    if (std::strncmp(date, "Feb", 3) == 0) return 2;
+    if (std::strncmp(date, "Mar", 3) == 0) return 3;
+    if (std::strncmp(date, "Apr", 3) == 0) return 4;
+    if (std::strncmp(date, "May", 3) == 0) return 5;
+    if (std::strncmp(date, "Jun", 3) == 0) return 6;
+    if (std::strncmp(date, "Jul", 3) == 0) return 7;
+    if (std::strncmp(date, "Aug", 3) == 0) return 8;
+    if (std::strncmp(date, "Sep", 3) == 0) return 9;
+    if (std::strncmp(date, "Oct", 3) == 0) return 10;
+    if (std::strncmp(date, "Nov", 3) == 0) return 11;
+    if (std::strncmp(date, "Dec", 3) == 0) return 12;
+    return 0;
+}
+
+uint32_t compileBuildDate() {
+    const char* date = __DATE__;
+    return static_cast<uint32_t>(parseYear(date) * 10000 +
+                                 parseMonth(date) * 100 +
+                                 parseDay(date));
+}
+
+uint32_t compileBuildTime() {
+    const char* time = __TIME__;
+    return static_cast<uint32_t>(parseTwoDigits(time[0], time[1]) * 10000 +
+                                 parseTwoDigits(time[3], time[4]) * 100 +
+                                 parseTwoDigits(time[6], time[7]));
+}
+
 RobotVersionInfo currentSdkVersion() {
     RobotVersionInfo info;
     info.major = BPX_SDK_VERSION_MAJOR;
     info.minor = BPX_SDK_VERSION_MINOR;
     info.patch = BPX_SDK_VERSION_PATCH;
     info.commit = EncodeCommitHash(BPX_SDK_GIT_COMMIT_HASH);
+    info.build_date = compileBuildDate();
+    info.build_time = compileBuildTime();
     return info;
 }
 

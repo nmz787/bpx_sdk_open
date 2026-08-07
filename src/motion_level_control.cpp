@@ -9,12 +9,14 @@ namespace bpx_sdk {
 namespace {
 
 constexpr int8_t kSubGaitNone = 0;
-constexpr int8_t kSubGaitForwardHandstand = -1;
-constexpr int8_t kSubGaitBackwardHandstand = 1;
-constexpr int8_t kSubGaitLeftFlip = -1;
+constexpr int8_t kRecoveredSharedNegativeSubGait = -1;
+constexpr int8_t kRecoveredSharedPositiveSubGait = 1;
+constexpr int8_t kSubGaitForwardHandstand = kRecoveredSharedNegativeSubGait;
+constexpr int8_t kSubGaitBackwardHandstand = kRecoveredSharedPositiveSubGait;
+constexpr int8_t kSubGaitLeftFlip = kRecoveredSharedNegativeSubGait;
 constexpr int8_t kSubGaitRightFlip = -2;
-constexpr int8_t kSubGaitPronk = -1;
-constexpr int8_t kSubGaitBound = 1;
+constexpr int8_t kSubGaitPronk = kRecoveredSharedNegativeSubGait;
+constexpr int8_t kSubGaitBound = kRecoveredSharedPositiveSubGait;
 constexpr int8_t kSubGaitPace = 2;
 
 }  // namespace

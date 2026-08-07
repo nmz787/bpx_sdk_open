@@ -154,43 +154,43 @@ bool JointLevelControl::setZeroJointCommand() {
 }
 
 bool JointLevelControl::getJointPositionHighRate(float joint_pos[12]) const {
-    if (!joint_pos || !impl_->high_rate_joint_seq) return false;
+    if (!joint_pos || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_joint_pos.begin(), impl_->observed_joint_pos.end(), joint_pos);
     return true;
 }
 
 bool JointLevelControl::getJointVelocityHighRate(float joint_vel[12]) const {
-    if (!joint_vel || !impl_->high_rate_joint_seq) return false;
+    if (!joint_vel || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_joint_vel.begin(), impl_->observed_joint_vel.end(), joint_vel);
     return true;
 }
 
 bool JointLevelControl::getJointTorqueHighRate(float joint_tau[12]) const {
-    if (!joint_tau || !impl_->high_rate_joint_seq) return false;
+    if (!joint_tau || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_joint_tau.begin(), impl_->observed_joint_tau.end(), joint_tau);
     return true;
 }
 
 bool JointLevelControl::getImuRpyHighRate(float rpy[3]) const {
-    if (!rpy || !impl_->high_rate_joint_seq) return false;
+    if (!rpy || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_imu_rpy.begin(), impl_->observed_imu_rpy.end(), rpy);
     return true;
 }
 
 bool JointLevelControl::getImuQuatHighRate(float quat[4]) const {
-    if (!quat || !impl_->high_rate_joint_seq) return false;
+    if (!quat || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_imu_quat.begin(), impl_->observed_imu_quat.end(), quat);
     return true;
 }
 
 bool JointLevelControl::getImuAccHighRate(float acc[3]) const {
-    if (!acc || !impl_->high_rate_joint_seq) return false;
+    if (!acc || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_imu_acc.begin(), impl_->observed_imu_acc.end(), acc);
     return true;
 }
 
 bool JointLevelControl::getImuOmegaHighRate(float omega[3]) const {
-    if (!omega || !impl_->high_rate_joint_seq) return false;
+    if (!omega || !impl_->high_rate_joint_seq || !impl_->high_rate_joint_timestamp) return false;
     std::copy(impl_->observed_imu_omega.begin(), impl_->observed_imu_omega.end(), omega);
     return true;
 }
