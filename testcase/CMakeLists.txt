@@ -23,7 +23,7 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
             bpx_sdk_precompiled
     )
     set_target_properties(api_assumption_probe_precompiled PROPERTIES
-        BUILD_RPATH "/home/runner/work/bpx_sdk_open/bpx_sdk_open/lib"
+        BUILD_RPATH "$<TARGET_FILE_DIR:bpx_sdk_precompiled>"
     )
 
     add_test(
@@ -32,6 +32,23 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
             -DRECOVERED_PROBE=$<TARGET_FILE:api_assumption_probe_recovered>
             -DPRECOMPILED_PROBE=$<TARGET_FILE:api_assumption_probe_precompiled>
             -P "${CMAKE_CURRENT_LIST_DIR}/compare_api_assumptions.cmake"
+    )
+
+    add_executable(
+        recovered_runtime_probe
+        recovered_runtime_probe.cpp
+    )
+    target_link_libraries(recovered_runtime_probe
+        PRIVATE
+            bpx_sdk_recovered
+    )
+    set_target_properties(recovered_runtime_probe PROPERTIES
+        BUILD_RPATH "$<TARGET_FILE_DIR:bpx_sdk_recovered>"
+    )
+
+    add_test(
+        NAME recovered_runtime_probe
+        COMMAND $<TARGET_FILE:recovered_runtime_probe>
     )
 endif()
 

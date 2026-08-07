@@ -1,6 +1,8 @@
 #include "request_robot_state.h"
 
 #include "bpx_sdk_version.h"
+#include "robot_state_udp_receiver.h"
+#include "tcp_subscribe_client.h"
 
 #include <algorithm>
 #include <array>
@@ -60,6 +62,21 @@ bool decodeMotionGait(uint8_t raw, MotionGait* gait) {
     }
 }
 
+void writeVersionOutputs(const RobotVersionInfo& version,
+                         uint16_t* major,
+                         uint16_t* minor,
+                         uint16_t* patch,
+                         uint32_t* commit,
+                         uint32_t* build_date,
+                         uint32_t* build_time) {
+    if (major) *major = version.major;
+    if (minor) *minor = version.minor;
+    if (patch) *patch = version.patch;
+    if (commit) *commit = version.commit;
+    if (build_date) *build_date = version.build_date;
+    if (build_time) *build_time = version.build_time;
+}
+
 }  // namespace
 
 class RequestRobotState::Impl {
@@ -78,6 +95,8 @@ public:
     uint32_t robot_version_build_time = 0;
     bool has_robot_version = false;
     char robot_ip[64] = {};
+    std::unique_ptr<TcpSubscribeClient> tcp_client;
+    std::unique_ptr<RobotStateUdpReceiver> state_receiver;
 
     std::optional<std::array<float, 12>> joint_position;
     std::optional<std::array<float, 12>> joint_velocity;
@@ -102,6 +121,32 @@ public:
     std::optional<uint32_t> odometry_timestamp;
     std::optional<uint32_t> motion_state_timestamp;
     std::optional<uint32_t> battery_timestamp;
+
+    void applySnapshot(const RobotStateSnapshot& snapshot) {
+        joint_position = snapshot.joint_position;
+        joint_velocity = snapshot.joint_velocity;
+        joint_torque = snapshot.joint_torque;
+        imu_rpy = snapshot.imu_rpy;
+        imu_quat = snapshot.imu_quat;
+        imu_acc = snapshot.imu_acc;
+        imu_omega = snapshot.imu_omega;
+        leg_odom = snapshot.leg_odom;
+        motor_temperature = snapshot.motor_temperature;
+        driver_temperature = snapshot.driver_temperature;
+        max_velocity = snapshot.max_velocity;
+        battery_level = snapshot.battery_level;
+        battery_current = snapshot.battery_current;
+        current_motion_state = snapshot.current_motion_state;
+        current_gait = snapshot.current_gait;
+        last_motion_state = snapshot.last_motion_state;
+        last_gait = snapshot.last_gait;
+        sub_gait = snapshot.sub_gait;
+        joint_state_timestamp = snapshot.joint_state_timestamp;
+        imu_timestamp = snapshot.imu_timestamp;
+        odometry_timestamp = snapshot.odometry_timestamp;
+        motion_state_timestamp = snapshot.motion_state_timestamp;
+        battery_timestamp = snapshot.battery_timestamp;
+    }
 };
 
 RequestRobotState::RequestRobotState()
@@ -112,11 +157,55 @@ RequestRobotState::RequestRobotState()
 RequestRobotState::~RequestRobotState() = default;
 
 bool RequestRobotState::connect() {
+    if (!impl_->state_receiver) {
+        impl_->state_receiver = std::make_unique<RobotStateUdpReceiver>(impl_->robot_state_upload_port);
+    }
+    impl_->state_receiver->setListenPort(impl_->robot_state_upload_port);
+    if (!impl_->state_receiver->connect()) {
+        return false;
+    }
+
+    if (!impl_->tcp_client) {
+        impl_->tcp_client = std::make_unique<TcpSubscribeClient>();
+    }
+    impl_->tcp_client->attachReceiver(impl_->state_receiver.get());
+    impl_->tcp_client->setSessionId(impl_->session_id);
+    impl_->tcp_client->setTcpLocalPort(impl_->tcp_local_port);
+    impl_->tcp_client->setRobotStateUploadPort(impl_->robot_state_upload_port);
+    impl_->tcp_client->setJointStateUploadPort(impl_->joint_state_upload_port);
+    impl_->tcp_client->setRobotStateUploadRate(impl_->robot_state_upload_rate_hz);
+    impl_->tcp_client->setHostServerMode(hostServerMode());
+    if (!impl_->tcp_client->startStateQuery()) {
+        return false;
+    }
+
+    RobotVersionInfo version{};
+    if (impl_->tcp_client->queryRobotVersion(&version)) {
+        impl_->robot_version_major = version.major;
+        impl_->robot_version_minor = version.minor;
+        impl_->robot_version_patch = version.patch;
+        impl_->robot_version_commit = version.commit;
+        impl_->robot_version_build_date = version.build_date;
+        impl_->robot_version_build_time = version.build_time;
+        impl_->has_robot_version = true;
+    }
+
+    RobotStateSnapshot snapshot;
+    if (impl_->state_receiver->getLatestState(&snapshot)) {
+        impl_->applySnapshot(snapshot);
+    }
+
     impl_->connected = true;
     return true;
 }
 
 void RequestRobotState::disconnect() {
+    if (impl_->tcp_client) {
+        impl_->tcp_client->disconnect();
+    }
+    if (impl_->state_receiver) {
+        impl_->state_receiver->disconnect();
+    }
     impl_->connected = false;
 }
 
@@ -136,13 +225,19 @@ void RequestRobotState::setRobotIp(const char* ip) {
 bool RequestRobotState::queryRobotVersion(uint16_t* major, uint16_t* minor, uint16_t* patch,
                                           uint32_t* commit, uint32_t* build_date,
                                           uint32_t* build_time) {
-    (void)major;
-    (void)minor;
-    (void)patch;
-    (void)commit;
-    (void)build_date;
-    (void)build_time;
-    return false;
+    TcpSubscribeClient tcp_client;
+    tcp_client.setSessionId(impl_->session_id);
+    tcp_client.setTcpLocalPort(impl_->tcp_local_port);
+    tcp_client.setRobotStateUploadPort(impl_->robot_state_upload_port);
+    tcp_client.setJointStateUploadPort(impl_->joint_state_upload_port);
+    tcp_client.setRobotStateUploadRate(impl_->robot_state_upload_rate_hz);
+    tcp_client.setHostServerMode(hostServerMode());
+    RobotVersionInfo version{};
+    if (!tcp_client.queryRobotVersion(&version)) {
+        return false;
+    }
+    writeVersionOutputs(version, major, minor, patch, commit, build_date, build_time);
+    return true;
 }
 
 bool RequestRobotState::getRobotVersion(uint16_t* major, uint16_t* minor, uint16_t* patch,
@@ -151,12 +246,15 @@ bool RequestRobotState::getRobotVersion(uint16_t* major, uint16_t* minor, uint16
     if (!impl_->has_robot_version) {
         return false;
     }
-    if (major) *major = impl_->robot_version_major;
-    if (minor) *minor = impl_->robot_version_minor;
-    if (patch) *patch = impl_->robot_version_patch;
-    if (commit) *commit = impl_->robot_version_commit;
-    if (build_date) *build_date = impl_->robot_version_build_date;
-    if (build_time) *build_time = impl_->robot_version_build_time;
+    const RobotVersionInfo version{
+        impl_->robot_version_major,
+        impl_->robot_version_minor,
+        impl_->robot_version_patch,
+        impl_->robot_version_commit,
+        impl_->robot_version_build_date,
+        impl_->robot_version_build_time,
+    };
+    writeVersionOutputs(version, major, minor, patch, commit, build_date, build_time);
     return true;
 }
 
@@ -302,10 +400,29 @@ std::optional<uint32_t> RequestRobotState::getBatteryTimestampValue() const { re
 
 uint8_t RequestRobotState::hostServerMode() const { return 1; }
 const char* RequestRobotState::robotIp() const { return impl_->robot_ip; }
+
+void RequestRobotState::setCurrentMotionStateValue(MotionState state) {
+    impl_->last_motion_state = impl_->current_motion_state;
+    impl_->current_motion_state = static_cast<uint8_t>(state);
+    impl_->motion_state_timestamp = nowMs();
+}
+
+void RequestRobotState::setMaxVelocityState(const std::array<float, 3>& max_velocity) {
+    impl_->max_velocity = max_velocity;
+}
+
+bool RequestRobotState::isConnected() const { return impl_->connected; }
+uint16_t RequestRobotState::robotStateUploadPort() const { return impl_->robot_state_upload_port; }
+uint16_t RequestRobotState::jointStateUploadPort() const { return impl_->joint_state_upload_port; }
+uint16_t RequestRobotState::robotStateUploadRate() const { return impl_->robot_state_upload_rate_hz; }
+uint16_t RequestRobotState::tcpLocalPort() const { return impl_->tcp_local_port; }
+uint16_t RequestRobotState::sessionId() const { return impl_->session_id; }
+
 void RequestRobotState::setCurrentGaitState(MotionGait gait, int8_t sub_gait) {
     impl_->last_gait = impl_->current_gait;
     impl_->current_gait = static_cast<uint8_t>(gait);
     impl_->sub_gait = static_cast<uint8_t>(sub_gait);
+    impl_->motion_state_timestamp = nowMs();
 }
 
 }  // namespace bpx_sdk

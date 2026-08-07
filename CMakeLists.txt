@@ -14,18 +14,32 @@ set(BPX_SDK_RECOVERED_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/request_robot_state.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/src/motion_level_control.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/src/joint_level_control.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/recovery_runtime.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/tcp_subscribe_client.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/robot_state_udp_receiver.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/motion_command_sender.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/joint_state_receiver.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/src/joint_command_sender.cpp"
 )
 
 option(BPX_SDK_BUILD_DIFFERENTIAL_TESTS
     "Build Linux differential tests against recovered and shipped shared libraries" ON)
 
-set(BPX_SDK_USE_RECOVERED_SOURCES ON)
+set(BPX_SDK_RECOVERED_SOURCES_AVAILABLE ON)
 foreach(BPX_SDK_RECOVERED_SOURCE IN LISTS BPX_SDK_RECOVERED_SOURCES)
     if(NOT EXISTS "${BPX_SDK_RECOVERED_SOURCE}")
-        set(BPX_SDK_USE_RECOVERED_SOURCES OFF)
+        set(BPX_SDK_RECOVERED_SOURCES_AVAILABLE OFF)
         break()
     endif()
 endforeach()
+
+option(BPX_SDK_USE_RECOVERED_SOURCES
+    "Build recovered sources instead of importing shipped binaries when available"
+    ${BPX_SDK_RECOVERED_SOURCES_AVAILABLE})
+
+if(BPX_SDK_USE_RECOVERED_SOURCES AND NOT BPX_SDK_RECOVERED_SOURCES_AVAILABLE)
+    message(FATAL_ERROR "BPX_SDK_USE_RECOVERED_SOURCES is ON but recovered sources are incomplete")
+endif()
 
 if(BPX_SDK_USE_RECOVERED_SOURCES)
     add_library(bpx_sdk STATIC

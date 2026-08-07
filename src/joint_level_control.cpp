@@ -1,5 +1,8 @@
 #include "joint_level_control.h"
 
+#include "joint_command_sender.h"
+#include "joint_state_receiver.h"
+
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -16,8 +19,33 @@ public:
     std::array<float, 12> observed_joint_pos{};
     std::array<float, 12> observed_joint_vel{};
     std::array<float, 12> observed_joint_tau{};
+    std::array<float, 3> observed_imu_rpy{};
+    std::array<float, 4> observed_imu_quat{0.0f, 0.0f, 0.0f, 1.0f};
+    std::array<float, 3> observed_imu_acc{};
+    std::array<float, 3> observed_imu_omega{};
     std::optional<float> high_rate_joint_timestamp;
     std::optional<uint32_t> high_rate_joint_seq;
+    std::unique_ptr<JointCommandSender> sender;
+    std::unique_ptr<JointStateReceiver> receiver;
+    
+    void refreshHighRateFeedback() {
+        if (!receiver) {
+            return;
+        }
+        JointStatePacket packet;
+        if (!receiver->getLatest(&packet)) {
+            return;
+        }
+        observed_joint_pos = packet.joint_position;
+        observed_joint_vel = packet.joint_velocity;
+        observed_joint_tau = packet.joint_torque;
+        observed_imu_rpy = packet.imu_rpy;
+        observed_imu_quat = packet.imu_quat;
+        observed_imu_acc = packet.imu_acc;
+        observed_imu_omega = packet.imu_omega;
+        high_rate_joint_timestamp = packet.timestamp_ms;
+        high_rate_joint_seq = packet.seq;
+    }
 };
 
 JointLevelControl::JointLevelControl()
@@ -25,9 +53,39 @@ JointLevelControl::JointLevelControl()
 
 JointLevelControl::~JointLevelControl() = default;
 
-bool JointLevelControl::connect() { return RequestRobotState::connect(); }
-void JointLevelControl::disconnect() { RequestRobotState::disconnect(); }
-void JointLevelControl::setJointStateUploadPort(uint16_t port) { RequestRobotState::setJointStateUploadPort(port); }
+bool JointLevelControl::connect() {
+    if (!RequestRobotState::connect()) {
+        return false;
+    }
+    if (!impl_->receiver) {
+        impl_->receiver = std::make_unique<JointStateReceiver>(jointStateUploadPort());
+    }
+    impl_->receiver->setListenPort(jointStateUploadPort());
+    impl_->receiver->start();
+    if (!impl_->sender) {
+        impl_->sender = std::make_unique<JointCommandSender>();
+    }
+    impl_->sender->attachReceiver(impl_->receiver.get());
+    return impl_->sender->open();
+}
+
+void JointLevelControl::disconnect() {
+    if (impl_->sender) {
+        impl_->sender->close();
+    }
+    if (impl_->receiver) {
+        impl_->receiver->stop();
+        impl_->receiver->close();
+    }
+    RequestRobotState::disconnect();
+}
+
+void JointLevelControl::setJointStateUploadPort(uint16_t port) {
+    RequestRobotState::setJointStateUploadPort(port);
+    if (impl_->receiver) {
+        impl_->receiver->setListenPort(port);
+    }
+}
 
 bool JointLevelControl::setJointCommand(const std::array<float, 12>& kp,
                                         const std::array<float, 12>& pos,
@@ -39,14 +97,48 @@ bool JointLevelControl::setJointCommand(const std::array<float, 12>& kp,
     impl_->kd = kd;
     impl_->vel = vel;
     impl_->tff = tff;
+    if (impl_->sender && impl_->sender->isOpen()) {
+        JointCommandPacket packet;
+        packet.kp = kp;
+        packet.pos = pos;
+        packet.kd = kd;
+        packet.vel = vel;
+        packet.tff = tff;
+        impl_->sender->send(packet);
+        impl_->refreshHighRateFeedback();
+    }
     return true;
 }
 
 bool JointLevelControl::setJointKp(const std::array<float, 12>& kp) { impl_->kp = kp; return true; }
-bool JointLevelControl::setJointPosition(const std::array<float, 12>& pos) { impl_->pos = pos; return true; }
+bool JointLevelControl::setJointPosition(const std::array<float, 12>& pos) {
+    impl_->pos = pos;
+    if (impl_->sender && impl_->sender->isOpen()) {
+        JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
+        impl_->sender->send(packet);
+        impl_->refreshHighRateFeedback();
+    }
+    return true;
+}
 bool JointLevelControl::setJointKd(const std::array<float, 12>& kd) { impl_->kd = kd; return true; }
-bool JointLevelControl::setJointVelocity(const std::array<float, 12>& vel) { impl_->vel = vel; return true; }
-bool JointLevelControl::setJointTorqueFeedForward(const std::array<float, 12>& tff) { impl_->tff = tff; return true; }
+bool JointLevelControl::setJointVelocity(const std::array<float, 12>& vel) {
+    impl_->vel = vel;
+    if (impl_->sender && impl_->sender->isOpen()) {
+        JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
+        impl_->sender->send(packet);
+        impl_->refreshHighRateFeedback();
+    }
+    return true;
+}
+bool JointLevelControl::setJointTorqueFeedForward(const std::array<float, 12>& tff) {
+    impl_->tff = tff;
+    if (impl_->sender && impl_->sender->isOpen()) {
+        JointCommandPacket packet{impl_->kp, impl_->pos, impl_->kd, impl_->vel, impl_->tff};
+        impl_->sender->send(packet);
+        impl_->refreshHighRateFeedback();
+    }
+    return true;
+}
 
 bool JointLevelControl::setZeroJointCommand() {
     impl_->kp.fill(0.0f);
@@ -54,6 +146,10 @@ bool JointLevelControl::setZeroJointCommand() {
     impl_->kd.fill(0.0f);
     impl_->vel.fill(0.0f);
     impl_->tff.fill(0.0f);
+    if (impl_->sender && impl_->sender->isOpen()) {
+        impl_->sender->sendZero();
+        impl_->refreshHighRateFeedback();
+    }
     return true;
 }
 
@@ -75,10 +171,29 @@ bool JointLevelControl::getJointTorqueHighRate(float joint_tau[12]) const {
     return true;
 }
 
-bool JointLevelControl::getImuRpyHighRate(float rpy[3]) const { return getImuRpy(rpy); }
-bool JointLevelControl::getImuQuatHighRate(float quat[4]) const { return getImuQuat(quat); }
-bool JointLevelControl::getImuAccHighRate(float acc[3]) const { return getImuAcc(acc); }
-bool JointLevelControl::getImuOmegaHighRate(float omega[3]) const { return getImuOmega(omega); }
+bool JointLevelControl::getImuRpyHighRate(float rpy[3]) const {
+    if (!rpy || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_imu_rpy.begin(), impl_->observed_imu_rpy.end(), rpy);
+    return true;
+}
+
+bool JointLevelControl::getImuQuatHighRate(float quat[4]) const {
+    if (!quat || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_imu_quat.begin(), impl_->observed_imu_quat.end(), quat);
+    return true;
+}
+
+bool JointLevelControl::getImuAccHighRate(float acc[3]) const {
+    if (!acc || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_imu_acc.begin(), impl_->observed_imu_acc.end(), acc);
+    return true;
+}
+
+bool JointLevelControl::getImuOmegaHighRate(float omega[3]) const {
+    if (!omega || !impl_->high_rate_joint_seq) return false;
+    std::copy(impl_->observed_imu_omega.begin(), impl_->observed_imu_omega.end(), omega);
+    return true;
+}
 
 bool JointLevelControl::getJointStateTimestampHighRate(float* time_stamp) const {
     if (!time_stamp || !impl_->high_rate_joint_timestamp) return false;

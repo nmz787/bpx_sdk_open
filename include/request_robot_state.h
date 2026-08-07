@@ -107,6 +107,14 @@ protected:
     virtual uint8_t hostServerMode() const;
     const char* robotIp() const;
     void setCurrentGaitState(MotionGait gait, int8_t sub_gait = 0);
+    void setCurrentMotionStateValue(MotionState state);
+    void setMaxVelocityState(const std::array<float, 3>& max_velocity);
+    bool isConnected() const;
+    uint16_t robotStateUploadPort() const;
+    uint16_t jointStateUploadPort() const;
+    uint16_t robotStateUploadRate() const;
+    uint16_t tcpLocalPort() const;
+    uint16_t sessionId() const;
 
 private:
     class Impl;
