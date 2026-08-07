@@ -27,7 +27,7 @@ public:
     std::optional<uint32_t> high_rate_joint_seq;
     std::unique_ptr<JointCommandSender> sender;
     std::unique_ptr<JointStateReceiver> receiver;
-    
+
     void refreshHighRateFeedback() {
         if (!receiver) {
             return;

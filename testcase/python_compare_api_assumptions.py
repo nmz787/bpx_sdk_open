@@ -109,13 +109,13 @@ def main() -> int:
         install_package(repo_root, shipped_root, None)
         install_package(repo_root, recovered_root, recovered_library)
 
-        shipped = probe_behavior(shipped_root)
+        precompiled = probe_behavior(shipped_root)
         recovered = probe_behavior(recovered_root)
-        if shipped != recovered:
+        if precompiled != recovered:
             fail(
                 "Recovered and precompiled Python probes diverged.\n"
                 f"--- recovered ---\n{json.dumps(recovered, indent=2, sort_keys=True)}\n"
-                f"--- precompiled ---\n{json.dumps(shipped, indent=2, sort_keys=True)}"
+                f"--- precompiled ---\n{json.dumps(precompiled, indent=2, sort_keys=True)}"
             )
 
         shutil.rmtree(repo_root / "build", ignore_errors=True)
