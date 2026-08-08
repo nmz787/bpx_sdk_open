@@ -51,7 +51,7 @@ bool JointCommandSender::send(const JointCommandPacket& packet) {
     latest_command_ = packet;
 
     bool sent = false;
-    if (open()) {
+    if (robot_ip_ != DEFAULT_SERVER_IP && open()) {
         sockaddr_in address{};
         if (fillSockaddr(robot_ip_.c_str(), kJointCommandPort, &address)) {
             const ssize_t bytes = sendto(socket_fd_, &packet, sizeof(packet), 0,

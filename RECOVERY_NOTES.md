@@ -240,3 +240,19 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Recover the socket-open and wire-serialization behavior in `TcpSubscribeClient`, `MotionCommandSender`, and `JointCommandSender` so the recovered runtime can emit the same TCP/UDP request packets as the shipped binaries instead of only accepting synthetic packet input.
 - Thread the recovered packet parsing through the real receive loops once the transport classes can open sockets and ingest live robot traffic without relying on seeded snapshots.
 - Extend the Python differential probe from pre-connect behavior into connected-path checks after the recovered transport stack can be exercised in CI without hanging on hardware/network operations.
+
+## iteration 7
+
+### Done
+
+- Replaced the no-op transport stubs in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/tcp_subscribe_client.cpp`, `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/motion_command_sender.cpp`, and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_command_sender.cpp` with recovered socket setup and wire serialization: the TCP subscribe path now emits the 24-byte recovered `SubscribeStateReq` layout toward the binary’s default port `10860`, the motion sender now emits the recovered 56-byte UDP command packet toward port `9527`, and the joint sender now transmits the raw 240-byte `JointCommandPacket` payload toward port `7896`.
+- Promoted the recovered subscribe-request wire layout into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h`, including the recovered timestamp/reserved trailer that the shipped binary sends on the wire, and threaded `setRobotIp(...)` through `RequestRobotState`, `MotionLevelControl`, and `JointLevelControl` so loopback and future live-robot tests can target explicit endpoints.
+- Replaced the placeholder UDP receive-loop stub in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/robot_state_udp_receiver.cpp` with a real bound socket + background receive thread, so recovered packet parsing can now be exercised by actual UDP traffic instead of only by direct `parsePacket(...)` calls.
+- Added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` and extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/recovered_packet_parse_probe.cpp`; CTest now verifies loopback TCP subscribe request capture, recovered motion/joint UDP serialization, and live UDP ingestion through `RobotStateUdpReceiver::receiveLoop(...)`.
+- Preserved the offline-safe fallback behavior used by the existing recovery probes: when the recovered transports still point at the default robot IP `10.21.20.1` inside CI, the transport classes avoid hanging on unreachable network operations and continue exposing the seeded/synthetic behavior required by the earlier validation probes.
+
+### Next
+
+- Recover and validate the concrete 32-byte TCP subscribe response layout so `TcpSubscribeClient` can do more than best-effort emission and can cache/inspect real robot acknowledgements the same way the shipped binary does.
+- Recover the live high-rate joint feedback socket path in `JointStateReceiver` so `JointLevelControl` can consume real incoming joint-state packets instead of only the current synthetic mirror used for offline validation.
+- Expand the Python differential coverage from loopback-safe transport emission into connected-path request/response assertions once CI can stand up paired fake robot endpoints for both TCP subscribe replies and streaming UDP state traffic.

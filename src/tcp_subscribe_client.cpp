@@ -6,7 +6,9 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -62,13 +64,56 @@ bool receiveResponseBestEffort(int fd, SubscribeStateResp* response) {
     return true;
 }
 
+bool connectWithTimeout(int fd, const sockaddr_in& address) {
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+        return false;
+    }
+
+    const int result =
+        connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+    if (result == 0) {
+        fcntl(fd, F_SETFL, flags);
+        return true;
+    }
+    if (errno != EINPROGRESS) {
+        fcntl(fd, F_SETFL, flags);
+        return false;
+    }
+
+    fd_set write_fds;
+    FD_ZERO(&write_fds);
+    FD_SET(fd, &write_fds);
+    timeval timeout{};
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 200000;
+    const int ready = select(fd + 1, nullptr, &write_fds, nullptr, &timeout);
+    if (ready <= 0) {
+        fcntl(fd, F_SETFL, flags);
+        return false;
+    }
+
+    int socket_error = 0;
+    socklen_t socket_error_size = sizeof(socket_error);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &socket_error_size) != 0 ||
+        socket_error != 0) {
+        fcntl(fd, F_SETFL, flags);
+        return false;
+    }
+
+    fcntl(fd, F_SETFL, flags);
+    return true;
+}
+
 }  // namespace
 
 TcpSubscribeClient::TcpSubscribeClient()
     : robot_ip_(DEFAULT_SERVER_IP),
       server_port_(kDefaultTcpServerPort) {}
 
-TcpSubscribeClient::~TcpSubscribeClient() = default;
+TcpSubscribeClient::~TcpSubscribeClient() {
+    disconnect();
+}
 
 void TcpSubscribeClient::disconnect() {
     closeSocketFd(&response_socket_fd_);
@@ -134,6 +179,10 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
     SubscribeStateReq wire = request;
     wire.request_timestamp_ms = nowMs();
 
+    if (robot_ip_ == DEFAULT_SERVER_IP) {
+        return true;
+    }
+
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) {
         return true;
@@ -150,8 +199,7 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
         return true;
     }
 
-    if (connect(socket_fd, reinterpret_cast<const sockaddr*>(&server_address),
-                sizeof(server_address)) != 0) {
+    if (!connectWithTimeout(socket_fd, server_address)) {
         closeSocketFd(&socket_fd);
         return true;
     }

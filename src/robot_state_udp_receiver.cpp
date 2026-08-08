@@ -101,7 +101,9 @@ void applyPayload(const ClientUploadData1Hz& payload,
 RobotStateUdpReceiver::RobotStateUdpReceiver(uint16_t listen_port)
     : listen_port_(listen_port) {}
 
-RobotStateUdpReceiver::~RobotStateUdpReceiver() = default;
+RobotStateUdpReceiver::~RobotStateUdpReceiver() {
+    disconnect();
+}
 
 void RobotStateUdpReceiver::disconnect() {
     running_ = false;
@@ -121,6 +123,10 @@ bool RobotStateUdpReceiver::openSocket() {
     }
     const int enabled = 1;
     setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
+    timeval timeout{};
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 200000;
+    setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     sockaddr_in address{};
     std::memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;

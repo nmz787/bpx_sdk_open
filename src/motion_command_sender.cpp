@@ -71,7 +71,10 @@ MotionCommand motionCommandFromState(uint8_t command) {
 MotionCommandSender::MotionCommandSender()
     : robot_ip_(DEFAULT_SERVER_IP) {}
 
-MotionCommandSender::~MotionCommandSender() = default;
+MotionCommandSender::~MotionCommandSender() {
+    disconnect();
+    close();
+}
 
 void MotionCommandSender::disconnect() {
     connected_ = false;
@@ -102,7 +105,7 @@ bool MotionCommandSender::sendPacket(MotionCommand command) {
     }
 
     bool sent = false;
-    if (open()) {
+    if (robot_ip_ != DEFAULT_SERVER_IP && open()) {
         sockaddr_in address{};
         if (fillSockaddr(robot_ip_.c_str(), kMotionCommandPort, &address)) {
             const ssize_t bytes = sendto(socket_fd_, &packet, sizeof(packet), 0,
