@@ -175,6 +175,7 @@ bool RequestRobotState::connect() {
     impl_->tcp_client->setJointStateUploadPort(impl_->joint_state_upload_port);
     impl_->tcp_client->setRobotStateUploadRate(impl_->robot_state_upload_rate_hz);
     impl_->tcp_client->setHostServerMode(hostServerMode());
+    impl_->tcp_client->setRobotIp(impl_->robot_ip);
     if (!impl_->tcp_client->startStateQuery()) {
         return false;
     }
@@ -232,6 +233,7 @@ bool RequestRobotState::queryRobotVersion(uint16_t* major, uint16_t* minor, uint
     tcp_client.setJointStateUploadPort(impl_->joint_state_upload_port);
     tcp_client.setRobotStateUploadRate(impl_->robot_state_upload_rate_hz);
     tcp_client.setHostServerMode(hostServerMode());
+    tcp_client.setRobotIp(impl_->robot_ip);
     RobotVersionInfo version{};
     if (!tcp_client.queryRobotVersion(&version)) {
         return false;

@@ -23,16 +23,17 @@ struct SubscribeStateReq {
     uint16_t session_id = 0;
     uint16_t robot_state_upload_port = 0;
     uint16_t joint_state_upload_port = 0;
+    uint16_t reserved = 0;
     uint16_t robot_state_upload_rate_hz = 0;
     uint8_t host_server_mode = 0;
+    uint8_t reserved_padding = 0;
+    uint32_t request_timestamp_ms = 0;
+    uint32_t reserved_word0 = 0;
+    uint32_t reserved_word1 = 0;
 };
 
 struct SubscribeStateResp {
-    bool accepted = true;
-    uint16_t session_id = 0;
-    uint16_t robot_state_upload_port = 0;
-    uint16_t joint_state_upload_port = 0;
-    uint16_t robot_state_upload_rate_hz = 0;
+    std::array<uint8_t, 32> raw{};
 };
 
 struct JointCommandPacket {
@@ -133,5 +134,10 @@ void applyGaitSelection(RobotStateSnapshot* snapshot, MotionGait gait, int8_t su
 void applyMotionState(RobotStateSnapshot* snapshot, MotionState state);
 
 }  // namespace bpx_sdk
+
+static_assert(sizeof(bpx_sdk::SubscribeStateReq) == 24,
+              "SubscribeStateReq must match the recovered 24-byte wire layout");
+static_assert(sizeof(bpx_sdk::SubscribeStateResp) == 32,
+              "SubscribeStateResp must match the recovered 32-byte wire layout");
 
 #endif  // BPX_SDK_RECOVERY_RUNTIME_H_

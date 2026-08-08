@@ -70,6 +70,23 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
         COMMAND $<TARGET_FILE:recovered_packet_parse_probe>
     )
 
+    add_executable(
+        transport_socket_probe
+        transport_socket_probe.cpp
+    )
+    target_link_libraries(transport_socket_probe
+        PRIVATE
+            bpx_sdk_recovered
+    )
+    set_target_properties(transport_socket_probe PROPERTIES
+        BUILD_RPATH "$<TARGET_FILE_DIR:bpx_sdk_recovered>"
+    )
+
+    add_test(
+        NAME transport_socket_probe
+        COMMAND $<TARGET_FILE:transport_socket_probe>
+    )
+
     if(Python3_Interpreter_FOUND)
         add_test(
             NAME python_recovered_runtime_probe

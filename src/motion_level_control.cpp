@@ -46,6 +46,7 @@ bool MotionLevelControl::connect() {
     if (!impl_->sender) {
         impl_->sender = std::make_unique<MotionCommandSender>();
     }
+    impl_->sender->setRobotIp(robotIp());
     if (!impl_->sender->connect(impl_->motion_command_rate_hz)) {
         return false;
     }

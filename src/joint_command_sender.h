@@ -3,6 +3,8 @@
 
 #include "recovery_runtime.h"
 
+#include <string>
+
 namespace bpx_sdk {
 
 class JointStateReceiver;
@@ -16,13 +18,14 @@ public:
     bool send(const JointCommandPacket& packet);
     void close();
     bool sendZero();
+    void setRobotIp(const char* ip);
 
     void attachReceiver(JointStateReceiver* receiver);
     bool isOpen() const;
 
 private:
-    bool open_ = false;
-    uint32_t seq_ = 0;
+    std::string robot_ip_;
+    int socket_fd_ = -1;
     JointCommandPacket latest_command_;
     JointStateReceiver* receiver_ = nullptr;
 };

@@ -3,7 +3,11 @@
 
 #include "recovery_runtime.h"
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <string>
+#include <thread>
 
 namespace bpx_sdk {
 
@@ -38,21 +42,27 @@ public:
     bool connect(unsigned short rate_hz);
     void runLoop(unsigned short rate_hz);
     void setGait(int gait, unsigned char sub_gait);
+    void setRobotIp(const char* ip);
 
     void attachReceiver(RobotStateUdpReceiver* receiver);
     bool isConnected() const;
 
 private:
-    bool connected_ = false;
-    bool control_lock_ = false;
-    bool velocity_control_enabled_ = false;
-    bool zero_positions_flag_ = false;
-    MotionGait gait_ = MotionGait::Walk;
-    int8_t sub_gait_ = 0;
-    float velocity_x_ = 0.0f;
-    float velocity_y_ = 0.0f;
-    float velocity_yaw_ = 0.0f;
-    uint16_t rate_hz_ = 0;
+    std::string robot_ip_;
+    int socket_fd_ = -1;
+    std::atomic<bool> connected_{false};
+    std::thread loop_thread_;
+    mutable std::mutex state_mutex_;
+    uint8_t command_ = static_cast<uint8_t>(MotionState::Motion);
+    uint8_t gait_ = static_cast<uint8_t>(MotionGait::Walk);
+    std::array<float, 6> command_values_{};
+    uint8_t velocity_control_enabled_ = 0;
+    uint8_t zero_positions_nonce_ = 0;
+    uint8_t sub_gait_ = 0;
+    uint8_t reserved_ = 0;
+    uint32_t control_flags_ = 0;
+    std::array<uint8_t, 16> reserved_tail_{};
+    std::atomic<int> seq_{0};
     RobotStateUdpReceiver* receiver_ = nullptr;
 };
 

@@ -65,6 +65,7 @@ bool JointLevelControl::connect() {
     if (!impl_->sender) {
         impl_->sender = std::make_unique<JointCommandSender>();
     }
+    impl_->sender->setRobotIp(robotIp());
     impl_->sender->attachReceiver(impl_->receiver.get());
     return impl_->sender->open();
 }

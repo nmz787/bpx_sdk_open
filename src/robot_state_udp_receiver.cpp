@@ -1,7 +1,11 @@
 #include "robot_state_udp_receiver.h"
 
 #include <algorithm>
+#include <arpa/inet.h>
 #include <cstring>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace bpx_sdk {
 namespace {
@@ -100,15 +104,42 @@ RobotStateUdpReceiver::RobotStateUdpReceiver(uint16_t listen_port)
 RobotStateUdpReceiver::~RobotStateUdpReceiver() = default;
 
 void RobotStateUdpReceiver::disconnect() {
+    running_ = false;
     closeSocket();
+    if (receive_thread_.joinable()) {
+        receive_thread_.join();
+    }
 }
 
 bool RobotStateUdpReceiver::openSocket() {
+    if (socket_open_) {
+        return true;
+    }
+    socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_fd_ < 0) {
+        return false;
+    }
+    const int enabled = 1;
+    setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
+    sockaddr_in address{};
+    std::memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(listen_port_);
+    if (bind(socket_fd_, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+        close(socket_fd_);
+        socket_fd_ = -1;
+        return false;
+    }
     socket_open_ = true;
     return true;
 }
 
 void RobotStateUdpReceiver::closeSocket() {
+    if (socket_fd_ >= 0) {
+        close(socket_fd_);
+        socket_fd_ = -1;
+    }
     socket_open_ = false;
 }
 
@@ -178,17 +209,34 @@ bool RobotStateUdpReceiver::parsePacket(const unsigned char* data, unsigned long
     return true;
 }
 
-void RobotStateUdpReceiver::receiveLoop(bool) {}
+void RobotStateUdpReceiver::receiveLoop(bool high_rate) {
+    std::array<unsigned char, 2048> buffer{};
+    while (running_) {
+        const ssize_t size = recv(socket_fd_, buffer.data(), buffer.size(), 0);
+        if (size <= 0) {
+            if (!running_) {
+                break;
+            }
+            continue;
+        }
+        parsePacket(buffer.data(), static_cast<unsigned long>(size), high_rate);
+    }
+}
 
 void RobotStateUdpReceiver::setListenPort(uint16_t listen_port) {
     listen_port_ = listen_port;
 }
 
-void RobotStateUdpReceiver::run() {}
+void RobotStateUdpReceiver::run() {
+    receiveLoop(false);
+}
 
 bool RobotStateUdpReceiver::connect() {
     if (!openSocket()) {
         return false;
+    }
+    if (!running_.exchange(true)) {
+        receive_thread_ = std::thread(&RobotStateUdpReceiver::run, this);
     }
     if (!has_snapshot_) {
         storeLatest(makeConnectedSnapshot());

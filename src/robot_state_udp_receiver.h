@@ -4,7 +4,9 @@
 #include "bpx_sdk_config.h"
 #include "recovery_runtime.h"
 
+#include <atomic>
 #include <mutex>
+#include <thread>
 
 namespace bpx_sdk {
 
@@ -81,6 +83,9 @@ public:
 private:
     bool has_snapshot_ = false;
     bool socket_open_ = false;
+    int socket_fd_ = -1;
+    std::atomic<bool> running_{false};
+    std::thread receive_thread_;
     uint16_t listen_port_;
     RobotStateSnapshot latest_snapshot_;
     mutable std::mutex mutex_;

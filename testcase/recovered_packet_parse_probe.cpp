@@ -2,10 +2,16 @@
 #include "../src/robot_state_udp_receiver.h"
 
 #include <array>
+#include <arpa/inet.h>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <thread>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -204,6 +210,44 @@ int main() {
     }
     if (!receiver.getTimestamp1Hz(&timestamp) || timestamp != 5005u) {
         return fail("1Hz timestamp mismatch");
+    }
+
+    bpx_sdk::RobotStateUdpReceiver live_receiver(19873);
+    if (!live_receiver.connect()) {
+        return fail("live receiver connect failed");
+    }
+
+    int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_fd < 0) {
+        return fail("failed to open loopback udp sender");
+    }
+
+    sockaddr_in live_address{};
+    std::memset(&live_address, 0, sizeof(live_address));
+    live_address.sin_family = AF_INET;
+    live_address.sin_port = htons(19873);
+    live_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    auto live_packet = makePacket(kPayloadType10Hz, 16u, 6006u, motion_payload);
+    if (sendto(udp_fd, live_packet.data(), live_packet.size(), 0,
+               reinterpret_cast<const sockaddr*>(&live_address),
+               sizeof(live_address)) != static_cast<ssize_t>(live_packet.size())) {
+        close(udp_fd);
+        return fail("failed to send loopback packet");
+    }
+    close(udp_fd);
+
+    bool live_updated = false;
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        if (live_receiver.getTimestamp10Hz(&timestamp) && timestamp == 6006u) {
+            live_updated = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    live_receiver.disconnect();
+    if (!live_updated) {
+        return fail("live receiveLoop did not ingest the loopback packet");
     }
 
     return 0;
