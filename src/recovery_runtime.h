@@ -4,6 +4,7 @@
 #include "motion_types.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace bpx_sdk {
@@ -34,6 +35,24 @@ struct SubscribeStateReq {
 
 struct SubscribeStateResp {
     std::array<uint8_t, 32> raw{};
+
+    uint8_t responseType() const { return raw[0]; }
+    uint8_t statusCode() const { return raw[1]; }
+    uint16_t reserved() const {
+        return static_cast<uint16_t>(raw[2]) |
+               (static_cast<uint16_t>(raw[3]) << 8);
+    }
+    uint32_t payloadWord(std::size_t index) const {
+        if (index >= 7) {
+            return 0;
+        }
+        const std::size_t base = 4 + index * 4;
+        return static_cast<uint32_t>(raw[base]) |
+               (static_cast<uint32_t>(raw[base + 1]) << 8) |
+               (static_cast<uint32_t>(raw[base + 2]) << 16) |
+               (static_cast<uint32_t>(raw[base + 3]) << 24);
+    }
+    bool accepted() const { return responseType() != 0 || statusCode() != 0; }
 };
 
 struct JointCommandPacket {

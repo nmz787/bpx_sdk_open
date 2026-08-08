@@ -2,6 +2,7 @@
 #include "../src/motion_command_sender.h"
 #include "../src/tcp_subscribe_client.h"
 #include "../include/joint_level_control.h"
+#include "../include/request_robot_state.h"
 
 #include <arpa/inet.h>
 #include <array>
@@ -114,6 +115,40 @@ bool recvUdpExact(int fd, T* value) {
     return size == static_cast<ssize_t>(sizeof(T));
 }
 
+void encodeWord(std::array<uint8_t, 32>* raw, size_t index, uint32_t value) {
+    if (!raw || index >= 7) {
+        return;
+    }
+    const size_t base = 4 + index * 4;
+    (*raw)[base] = static_cast<uint8_t>(value & 0xffu);
+    (*raw)[base + 1] = static_cast<uint8_t>((value >> 8) & 0xffu);
+    (*raw)[base + 2] = static_cast<uint8_t>((value >> 16) & 0xffu);
+    (*raw)[base + 3] = static_cast<uint8_t>((value >> 24) & 0xffu);
+}
+
+template <typename Payload>
+bool sendUploadPacket(int fd, uint16_t port, uint32_t seq, uint32_t timestamp_ms,
+                      uint16_t payload_type, const Payload& payload) {
+    struct Packet {
+        bpx_sdk::ClientUploadPacketHead head{};
+        Payload payload{};
+    } packet{};
+    packet.head.seq = seq;
+    packet.head.timestamp_ms = timestamp_ms;
+    packet.head.payload_size = sizeof(Payload);
+    packet.head.payload_type = payload_type;
+    packet.payload = payload;
+
+    sockaddr_in address{};
+    std::memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    return sendto(fd, &packet, sizeof(packet), 0,
+                  reinterpret_cast<const sockaddr*>(&address),
+                  sizeof(address)) == static_cast<ssize_t>(sizeof(packet));
+}
+
 }  // namespace
 
 int main() {
@@ -139,6 +174,11 @@ int main() {
                 captured_request = request;
                 bpx_sdk::SubscribeStateResp response{};
                 response.raw[0] = 1;
+                response.raw[1] = 2;
+                response.raw[2] = 0x34;
+                response.raw[3] = 0x12;
+                encodeWord(&response.raw, 0, 0x11223344u);
+                encodeWord(&response.raw, 1, 0x55667788u);
                 send(client_fd, response.raw.data(), response.raw.size(), 0);
             }
             close(client_fd);
@@ -164,6 +204,16 @@ int main() {
         }
         if (*observed_peer_port != kTcpLocalPort) {
             return fail("TCP client did not bind the configured local port");
+        }
+        bpx_sdk::SubscribeStateResp response{};
+        if (!client.getLatestResponse(&response) ||
+            response.responseType() != 1 ||
+            response.statusCode() != 2 ||
+            response.reserved() != 0x1234 ||
+            response.payloadWord(0) != 0x11223344u ||
+            response.payloadWord(1) != 0x55667788u ||
+            !response.accepted()) {
+            return fail("TCP client did not cache the structured subscribe response");
         }
         if (captured_request->session_id != 7 ||
             captured_request->robot_state_upload_port != 19873 ||
@@ -256,6 +306,176 @@ int main() {
             !closeEnough(received.vel[1], -0.75f) ||
             !closeEnough(received.tff[2], 0.5f)) {
             return fail("joint command packet contents were incorrect");
+        }
+    }
+
+    {
+        int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd < 0 || !bindLoopbackSocket(server_fd, kTcpServerPort, SOCK_STREAM)) {
+            return fail("failed to open loopback TCP server for robot-state stream");
+        }
+
+        const uint16_t robot_state_port = reserveLoopbackUdpPort();
+        if (robot_state_port == 0) {
+            close(server_fd);
+            return fail("failed to reserve robot-state UDP port");
+        }
+
+        std::thread server([&] {
+            sockaddr_in peer{};
+            socklen_t peer_size = sizeof(peer);
+            const int client_fd =
+                accept(server_fd, reinterpret_cast<sockaddr*>(&peer), &peer_size);
+            if (client_fd < 0) {
+                return;
+            }
+            bpx_sdk::SubscribeStateReq request{};
+            if (recvExact(client_fd, &request)) {
+                bpx_sdk::SubscribeStateResp response{};
+                response.raw[0] = 1;
+                send(client_fd, response.raw.data(), response.raw.size(), 0);
+            }
+            close(client_fd);
+        });
+
+        bpx_sdk::RequestRobotState state;
+        state.setRobotIp("127.0.0.1");
+        state.setRobotStateUploadPort(robot_state_port);
+        if (!state.connect()) {
+            server.join();
+            close(server_fd);
+            return fail("RequestRobotState connect failed");
+        }
+
+        server.join();
+        close(server_fd);
+
+        int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (udp_fd < 0) {
+            state.disconnect();
+            return fail("failed to open robot-state UDP sender");
+        }
+
+        bpx_sdk::ClientUploadData1000Hz data1000{};
+        data1000.joint_position[0] = 1.25f;
+        data1000.joint_velocity[1] = -2.5f;
+        data1000.joint_torque[2] = 3.75f;
+        bpx_sdk::ClientUploadData200Hz data200{};
+        data200.imu_rpy = {0.4f, -0.5f, 0.6f};
+        data200.imu_quat = {0.1f, 0.2f, 0.3f, 0.9f};
+        data200.imu_acc = {1.0f, 2.0f, 3.0f};
+        data200.imu_omega = {-4.0f, -5.0f, -6.0f};
+        bpx_sdk::ClientUploadData50Hz data50{};
+        data50.leg_odom.velocity_body[0] = 0.7f;
+        data50.leg_odom.position[1] = 5.0f;
+        data50.leg_odom.orientation[3] = 0.8f;
+        data50.leg_odom.angular_velocity[2] = -0.9f;
+        bpx_sdk::ClientUploadData10Hz data10{};
+        data10.current_motion_state = static_cast<uint8_t>(bpx_sdk::MotionState::Motion);
+        data10.current_gait = static_cast<uint8_t>(bpx_sdk::MotionGait::Running);
+        data10.last_motion_state = static_cast<uint8_t>(bpx_sdk::MotionState::Passive);
+        data10.last_gait = static_cast<uint8_t>(bpx_sdk::MotionGait::Walk);
+        data10.sub_gait = 4;
+        data10.max_velocity = {3.0f, 1.0f, 2.0f};
+        bpx_sdk::ClientUploadData1Hz data1{};
+        data1.battery_level = 73;
+        data1.battery_current = 6.5f;
+        data1.motor_temperature[0] = 11;
+        data1.driver_temperature[1] = -2;
+
+        if (!sendUploadPacket(udp_fd, robot_state_port, 11, 1001, 0x1000, data1000) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 12, 1002, 0x0200, data200) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 13, 1003, 0x0050, data50) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 14, 1004, 0x0010, data10) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 15, 1005, 0x0001, data1)) {
+            close(udp_fd);
+            state.disconnect();
+            return fail("failed to send robot-state upload packets");
+        }
+        close(udp_fd);
+
+        bool received_state = false;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            float joint_pos[12] = {};
+            float joint_vel[12] = {};
+            float joint_tau[12] = {};
+            float imu_rpy[3] = {};
+            float imu_quat[4] = {};
+            float imu_acc[3] = {};
+            float imu_omega[3] = {};
+            bpx_sdk::LegOdom leg_odom{};
+            float motor_temperature[12] = {};
+            float driver_temperature[12] = {};
+            float max_velocity[3] = {};
+            uint8_t battery_level = 0;
+            float battery_current = 0.0f;
+            uint8_t current_motion_state = 0;
+            uint8_t current_gait = 0;
+            uint8_t last_motion_state = 0;
+            uint8_t last_gait = 0;
+            uint8_t sub_gait = 0;
+            uint32_t joint_ts = 0;
+            uint32_t imu_ts = 0;
+            uint32_t odom_ts = 0;
+            uint32_t motion_ts = 0;
+            uint32_t battery_ts = 0;
+            if (state.getJointPosition(joint_pos) &&
+                state.getJointVelocity(joint_vel) &&
+                state.getJointTorque(joint_tau) &&
+                state.getImuRpy(imu_rpy) &&
+                state.getImuQuat(imu_quat) &&
+                state.getImuAcc(imu_acc) &&
+                state.getImuOmega(imu_omega) &&
+                state.getLegOdom(&leg_odom) &&
+                state.getMotorTemperature(motor_temperature) &&
+                state.getDriverTemperature(driver_temperature) &&
+                state.getMaxVelocity(max_velocity) &&
+                state.getBatteryLevel(&battery_level) &&
+                state.getBatteryCurrent(&battery_current) &&
+                state.getCurrentMotionState(&current_motion_state) &&
+                state.getCurrentGait(&current_gait) &&
+                state.getLastMotionState(&last_motion_state) &&
+                state.getLastGait(&last_gait) &&
+                state.getSubGait(&sub_gait) &&
+                state.getJointStateTimestamp(&joint_ts) &&
+                state.getImuTimestamp(&imu_ts) &&
+                state.getOdometryTimestamp(&odom_ts) &&
+                state.getMotionStateTimestamp(&motion_ts) &&
+                state.getBatteryTimestamp(&battery_ts) &&
+                closeEnough(joint_pos[0], data1000.joint_position[0]) &&
+                closeEnough(joint_vel[1], data1000.joint_velocity[1]) &&
+                closeEnough(joint_tau[2], data1000.joint_torque[2]) &&
+                closeEnough(imu_rpy[2], data200.imu_rpy[2]) &&
+                closeEnough(imu_quat[3], data200.imu_quat[3]) &&
+                closeEnough(imu_acc[1], data200.imu_acc[1]) &&
+                closeEnough(imu_omega[0], data200.imu_omega[0]) &&
+                closeEnough(leg_odom.velocity_body[0], data50.leg_odom.velocity_body[0]) &&
+                closeEnough(leg_odom.position[1], data50.leg_odom.position[1]) &&
+                closeEnough(leg_odom.orientation[3], data50.leg_odom.orientation[3]) &&
+                closeEnough(leg_odom.angular_velocity[2], data50.leg_odom.angular_velocity[2]) &&
+                closeEnough(motor_temperature[0], 71.0f) &&
+                closeEnough(driver_temperature[1], 58.0f) &&
+                closeEnough(max_velocity[0], data10.max_velocity[0]) &&
+                battery_level == data1.battery_level &&
+                closeEnough(battery_current, data1.battery_current) &&
+                current_motion_state == data10.current_motion_state &&
+                current_gait == data10.current_gait &&
+                last_motion_state == data10.last_motion_state &&
+                last_gait == data10.last_gait &&
+                sub_gait == static_cast<uint8_t>(data10.sub_gait) &&
+                joint_ts == 1001 &&
+                imu_ts == 1002 &&
+                odom_ts == 1003 &&
+                motion_ts == 1004 &&
+                battery_ts == 1005) {
+                received_state = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        state.disconnect();
+        if (!received_state) {
+            return fail("RequestRobotState did not surface live robot-state UDP updates");
         }
     }
 

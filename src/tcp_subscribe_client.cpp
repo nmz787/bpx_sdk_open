@@ -18,7 +18,7 @@ namespace {
 constexpr uint16_t kDefaultTcpServerPort = 10860;
 
 bool decodeAccepted(const SubscribeStateResp& response) {
-    return response.raw[0] != 0;
+    return response.accepted();
 }
 
 void closeSocketFd(int* fd) {
@@ -118,6 +118,7 @@ TcpSubscribeClient::~TcpSubscribeClient() {
 void TcpSubscribeClient::disconnect() {
     closeSocketFd(&response_socket_fd_);
     response_loop_running_ = false;
+    clearLatestResponse();
 }
 
 void TcpSubscribeClient::setSessionId(uint16_t session_id) {
@@ -211,6 +212,7 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
 
     SubscribeStateResp response{};
     if (receiveResponseBestEffort(socket_fd, &response)) {
+        storeLatestResponse(response);
         printResponse(response);
     }
     closeSocketFd(&socket_fd);
@@ -219,6 +221,18 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
 
 void TcpSubscribeClient::printResponse(const SubscribeStateResp& response) const {
     (void)decodeAccepted(response);
+}
+
+bool TcpSubscribeClient::getLatestResponse(SubscribeStateResp* response) const {
+    if (!response) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(response_mutex_);
+    if (!has_latest_response_) {
+        return false;
+    }
+    *response = latest_response_;
+    return true;
 }
 
 bool TcpSubscribeClient::bindLocalTcpPort(int socket_fd) const {
@@ -287,6 +301,18 @@ bool TcpSubscribeClient::sendAll(int socket_fd, const unsigned char* buffer, uns
 
 void TcpSubscribeClient::attachReceiver(RobotStateUdpReceiver* receiver) {
     receiver_ = receiver;
+}
+
+void TcpSubscribeClient::clearLatestResponse() const {
+    std::lock_guard<std::mutex> lock(response_mutex_);
+    latest_response_ = SubscribeStateResp{};
+    has_latest_response_ = false;
+}
+
+void TcpSubscribeClient::storeLatestResponse(const SubscribeStateResp& response) const {
+    std::lock_guard<std::mutex> lock(response_mutex_);
+    latest_response_ = response;
+    has_latest_response_ = true;
 }
 
 }  // namespace bpx_sdk

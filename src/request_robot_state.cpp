@@ -122,6 +122,18 @@ public:
     std::optional<uint32_t> motion_state_timestamp;
     std::optional<uint32_t> battery_timestamp;
 
+    bool refreshSnapshotFromReceiver() {
+        if (!state_receiver) {
+            return false;
+        }
+        RobotStateSnapshot snapshot;
+        if (!state_receiver->getLatestState(&snapshot)) {
+            return false;
+        }
+        applySnapshot(snapshot);
+        return true;
+    }
+
     void applySnapshot(const RobotStateSnapshot& snapshot) {
         joint_position = snapshot.joint_position;
         joint_velocity = snapshot.joint_velocity;
@@ -260,116 +272,129 @@ bool RequestRobotState::getRobotVersion(uint16_t* major, uint16_t* minor, uint16
     return true;
 }
 
-bool RequestRobotState::getJointPosition(float joint_pos[12]) const { return impl_->joint_position && copyFloatArray(*impl_->joint_position, joint_pos); }
-bool RequestRobotState::getJointVelocity(float joint_vel[12]) const { return impl_->joint_velocity && copyFloatArray(*impl_->joint_velocity, joint_vel); }
-bool RequestRobotState::getJointTorque(float joint_tau[12]) const { return impl_->joint_torque && copyFloatArray(*impl_->joint_torque, joint_tau); }
-bool RequestRobotState::getImuRpy(float rpy[3]) const { return impl_->imu_rpy && copyFloatArray(*impl_->imu_rpy, rpy); }
-bool RequestRobotState::getImuQuat(float quat[4]) const { return impl_->imu_quat && copyFloatArray(*impl_->imu_quat, quat); }
-bool RequestRobotState::getImuAcc(float acc[3]) const { return impl_->imu_acc && copyFloatArray(*impl_->imu_acc, acc); }
-bool RequestRobotState::getImuOmega(float omega[3]) const { return impl_->imu_omega && copyFloatArray(*impl_->imu_omega, omega); }
+bool RequestRobotState::getJointPosition(float joint_pos[12]) const { refreshLiveSnapshot(); return impl_->joint_position && copyFloatArray(*impl_->joint_position, joint_pos); }
+bool RequestRobotState::getJointVelocity(float joint_vel[12]) const { refreshLiveSnapshot(); return impl_->joint_velocity && copyFloatArray(*impl_->joint_velocity, joint_vel); }
+bool RequestRobotState::getJointTorque(float joint_tau[12]) const { refreshLiveSnapshot(); return impl_->joint_torque && copyFloatArray(*impl_->joint_torque, joint_tau); }
+bool RequestRobotState::getImuRpy(float rpy[3]) const { refreshLiveSnapshot(); return impl_->imu_rpy && copyFloatArray(*impl_->imu_rpy, rpy); }
+bool RequestRobotState::getImuQuat(float quat[4]) const { refreshLiveSnapshot(); return impl_->imu_quat && copyFloatArray(*impl_->imu_quat, quat); }
+bool RequestRobotState::getImuAcc(float acc[3]) const { refreshLiveSnapshot(); return impl_->imu_acc && copyFloatArray(*impl_->imu_acc, acc); }
+bool RequestRobotState::getImuOmega(float omega[3]) const { refreshLiveSnapshot(); return impl_->imu_omega && copyFloatArray(*impl_->imu_omega, omega); }
 
 bool RequestRobotState::getLegOdom(LegOdom* leg_odom) const {
+    refreshLiveSnapshot();
     if (!leg_odom || !impl_->leg_odom) return false;
     *leg_odom = *impl_->leg_odom;
     return true;
 }
 
-bool RequestRobotState::getMotorTemperature(float motor_temperature[12]) const { return impl_->motor_temperature && copyFloatArray(*impl_->motor_temperature, motor_temperature); }
-bool RequestRobotState::getDriverTemperature(float driver_temperature[12]) const { return impl_->driver_temperature && copyFloatArray(*impl_->driver_temperature, driver_temperature); }
+bool RequestRobotState::getMotorTemperature(float motor_temperature[12]) const { refreshLiveSnapshot(); return impl_->motor_temperature && copyFloatArray(*impl_->motor_temperature, motor_temperature); }
+bool RequestRobotState::getDriverTemperature(float driver_temperature[12]) const { refreshLiveSnapshot(); return impl_->driver_temperature && copyFloatArray(*impl_->driver_temperature, driver_temperature); }
 
 bool RequestRobotState::getCurrentMotionState(uint8_t* current_state) const {
+    refreshLiveSnapshot();
     if (!current_state || !impl_->current_motion_state) return false;
     *current_state = *impl_->current_motion_state;
     return true;
 }
 
 bool RequestRobotState::getCurrentGait(uint8_t* current_gait) const {
+    refreshLiveSnapshot();
     if (!current_gait || !impl_->current_gait) return false;
     *current_gait = *impl_->current_gait;
     return true;
 }
 
 bool RequestRobotState::getLastMotionState(uint8_t* last_state) const {
+    refreshLiveSnapshot();
     if (!last_state || !impl_->last_motion_state) return false;
     *last_state = *impl_->last_motion_state;
     return true;
 }
 
 bool RequestRobotState::getLastGait(uint8_t* last_gait) const {
+    refreshLiveSnapshot();
     if (!last_gait || !impl_->last_gait) return false;
     *last_gait = *impl_->last_gait;
     return true;
 }
 
 bool RequestRobotState::getSubGait(uint8_t* sub_gait) const {
+    refreshLiveSnapshot();
     if (!sub_gait || !impl_->sub_gait) return false;
     *sub_gait = *impl_->sub_gait;
     return true;
 }
 
-bool RequestRobotState::getCurrentMotionState(MotionState* current_state) const { return impl_->current_motion_state && decodeMotionState(*impl_->current_motion_state, current_state); }
-bool RequestRobotState::getCurrentGait(MotionGait* current_gait) const { return impl_->current_gait && decodeMotionGait(*impl_->current_gait, current_gait); }
-bool RequestRobotState::getLastMotionState(MotionState* last_state) const { return impl_->last_motion_state && decodeMotionState(*impl_->last_motion_state, last_state); }
-bool RequestRobotState::getLastGait(MotionGait* last_gait) const { return impl_->last_gait && decodeMotionGait(*impl_->last_gait, last_gait); }
-bool RequestRobotState::getMaxVelocity(float max_vel[3]) const { return impl_->max_velocity && copyFloatArray(*impl_->max_velocity, max_vel); }
+bool RequestRobotState::getCurrentMotionState(MotionState* current_state) const { refreshLiveSnapshot(); return impl_->current_motion_state && decodeMotionState(*impl_->current_motion_state, current_state); }
+bool RequestRobotState::getCurrentGait(MotionGait* current_gait) const { refreshLiveSnapshot(); return impl_->current_gait && decodeMotionGait(*impl_->current_gait, current_gait); }
+bool RequestRobotState::getLastMotionState(MotionState* last_state) const { refreshLiveSnapshot(); return impl_->last_motion_state && decodeMotionState(*impl_->last_motion_state, last_state); }
+bool RequestRobotState::getLastGait(MotionGait* last_gait) const { refreshLiveSnapshot(); return impl_->last_gait && decodeMotionGait(*impl_->last_gait, last_gait); }
+bool RequestRobotState::getMaxVelocity(float max_vel[3]) const { refreshLiveSnapshot(); return impl_->max_velocity && copyFloatArray(*impl_->max_velocity, max_vel); }
 
 bool RequestRobotState::getBatteryLevel(uint8_t* battery_level) const {
+    refreshLiveSnapshot();
     if (!battery_level || !impl_->battery_level) return false;
     *battery_level = *impl_->battery_level;
     return true;
 }
 
 bool RequestRobotState::getBatteryCurrent(float* battery_current) const {
+    refreshLiveSnapshot();
     if (!battery_current || !impl_->battery_current) return false;
     *battery_current = *impl_->battery_current;
     return true;
 }
 
 bool RequestRobotState::getJointStateTimestamp(uint32_t* time_ms) const {
+    refreshLiveSnapshot();
     if (!time_ms || !impl_->joint_state_timestamp) return false;
     *time_ms = *impl_->joint_state_timestamp;
     return true;
 }
 
 bool RequestRobotState::getImuTimestamp(uint32_t* time_ms) const {
+    refreshLiveSnapshot();
     if (!time_ms || !impl_->imu_timestamp) return false;
     *time_ms = *impl_->imu_timestamp;
     return true;
 }
 
 bool RequestRobotState::getOdometryTimestamp(uint32_t* time_ms) const {
+    refreshLiveSnapshot();
     if (!time_ms || !impl_->odometry_timestamp) return false;
     *time_ms = *impl_->odometry_timestamp;
     return true;
 }
 
 bool RequestRobotState::getMotionStateTimestamp(uint32_t* time_ms) const {
+    refreshLiveSnapshot();
     if (!time_ms || !impl_->motion_state_timestamp) return false;
     *time_ms = *impl_->motion_state_timestamp;
     return true;
 }
 
 bool RequestRobotState::getBatteryTimestamp(uint32_t* time_ms) const {
+    refreshLiveSnapshot();
     if (!time_ms || !impl_->battery_timestamp) return false;
     *time_ms = *impl_->battery_timestamp;
     return true;
 }
 
-std::optional<std::array<float, 12>> RequestRobotState::getJointPositionArray() const { return impl_->joint_position; }
-std::optional<std::array<float, 12>> RequestRobotState::getJointVelocityArray() const { return impl_->joint_velocity; }
-std::optional<std::array<float, 12>> RequestRobotState::getJointTorqueArray() const { return impl_->joint_torque; }
-std::optional<std::array<float, 3>> RequestRobotState::getImuRpyArray() const { return impl_->imu_rpy; }
-std::optional<std::array<float, 4>> RequestRobotState::getImuQuatArray() const { return impl_->imu_quat; }
-std::optional<std::array<float, 3>> RequestRobotState::getImuAccArray() const { return impl_->imu_acc; }
-std::optional<std::array<float, 3>> RequestRobotState::getImuOmegaArray() const { return impl_->imu_omega; }
-std::optional<LegOdom> RequestRobotState::getLegOdomValue() const { return impl_->leg_odom; }
-std::optional<std::array<float, 12>> RequestRobotState::getMotorTemperatureArray() const { return impl_->motor_temperature; }
-std::optional<std::array<float, 12>> RequestRobotState::getDriverTemperatureArray() const { return impl_->driver_temperature; }
-std::optional<uint8_t> RequestRobotState::getCurrentMotionStateValue() const { return impl_->current_motion_state; }
-std::optional<uint8_t> RequestRobotState::getCurrentGaitValue() const { return impl_->current_gait; }
-std::optional<uint8_t> RequestRobotState::getLastMotionStateValue() const { return impl_->last_motion_state; }
-std::optional<uint8_t> RequestRobotState::getLastGaitValue() const { return impl_->last_gait; }
-std::optional<uint8_t> RequestRobotState::getSubGaitValue() const { return impl_->sub_gait; }
+std::optional<std::array<float, 12>> RequestRobotState::getJointPositionArray() const { refreshLiveSnapshot(); return impl_->joint_position; }
+std::optional<std::array<float, 12>> RequestRobotState::getJointVelocityArray() const { refreshLiveSnapshot(); return impl_->joint_velocity; }
+std::optional<std::array<float, 12>> RequestRobotState::getJointTorqueArray() const { refreshLiveSnapshot(); return impl_->joint_torque; }
+std::optional<std::array<float, 3>> RequestRobotState::getImuRpyArray() const { refreshLiveSnapshot(); return impl_->imu_rpy; }
+std::optional<std::array<float, 4>> RequestRobotState::getImuQuatArray() const { refreshLiveSnapshot(); return impl_->imu_quat; }
+std::optional<std::array<float, 3>> RequestRobotState::getImuAccArray() const { refreshLiveSnapshot(); return impl_->imu_acc; }
+std::optional<std::array<float, 3>> RequestRobotState::getImuOmegaArray() const { refreshLiveSnapshot(); return impl_->imu_omega; }
+std::optional<LegOdom> RequestRobotState::getLegOdomValue() const { refreshLiveSnapshot(); return impl_->leg_odom; }
+std::optional<std::array<float, 12>> RequestRobotState::getMotorTemperatureArray() const { refreshLiveSnapshot(); return impl_->motor_temperature; }
+std::optional<std::array<float, 12>> RequestRobotState::getDriverTemperatureArray() const { refreshLiveSnapshot(); return impl_->driver_temperature; }
+std::optional<uint8_t> RequestRobotState::getCurrentMotionStateValue() const { refreshLiveSnapshot(); return impl_->current_motion_state; }
+std::optional<uint8_t> RequestRobotState::getCurrentGaitValue() const { refreshLiveSnapshot(); return impl_->current_gait; }
+std::optional<uint8_t> RequestRobotState::getLastMotionStateValue() const { refreshLiveSnapshot(); return impl_->last_motion_state; }
+std::optional<uint8_t> RequestRobotState::getLastGaitValue() const { refreshLiveSnapshot(); return impl_->last_gait; }
+std::optional<uint8_t> RequestRobotState::getSubGaitValue() const { refreshLiveSnapshot(); return impl_->sub_gait; }
 
 std::optional<MotionState> RequestRobotState::getCurrentMotionStateEnum() const {
     MotionState state{};
@@ -391,14 +416,14 @@ std::optional<MotionGait> RequestRobotState::getLastGaitEnum() const {
     return getLastGait(&gait) ? std::optional<MotionGait>(gait) : std::nullopt;
 }
 
-std::optional<std::array<float, 3>> RequestRobotState::getMaxVelocityArray() const { return impl_->max_velocity; }
-std::optional<uint8_t> RequestRobotState::getBatteryLevelValue() const { return impl_->battery_level; }
-std::optional<float> RequestRobotState::getBatteryCurrentValue() const { return impl_->battery_current; }
-std::optional<uint32_t> RequestRobotState::getJointStateTimestampValue() const { return impl_->joint_state_timestamp; }
-std::optional<uint32_t> RequestRobotState::getImuTimestampValue() const { return impl_->imu_timestamp; }
-std::optional<uint32_t> RequestRobotState::getOdometryTimestampValue() const { return impl_->odometry_timestamp; }
-std::optional<uint32_t> RequestRobotState::getMotionStateTimestampValue() const { return impl_->motion_state_timestamp; }
-std::optional<uint32_t> RequestRobotState::getBatteryTimestampValue() const { return impl_->battery_timestamp; }
+std::optional<std::array<float, 3>> RequestRobotState::getMaxVelocityArray() const { refreshLiveSnapshot(); return impl_->max_velocity; }
+std::optional<uint8_t> RequestRobotState::getBatteryLevelValue() const { refreshLiveSnapshot(); return impl_->battery_level; }
+std::optional<float> RequestRobotState::getBatteryCurrentValue() const { refreshLiveSnapshot(); return impl_->battery_current; }
+std::optional<uint32_t> RequestRobotState::getJointStateTimestampValue() const { refreshLiveSnapshot(); return impl_->joint_state_timestamp; }
+std::optional<uint32_t> RequestRobotState::getImuTimestampValue() const { refreshLiveSnapshot(); return impl_->imu_timestamp; }
+std::optional<uint32_t> RequestRobotState::getOdometryTimestampValue() const { refreshLiveSnapshot(); return impl_->odometry_timestamp; }
+std::optional<uint32_t> RequestRobotState::getMotionStateTimestampValue() const { refreshLiveSnapshot(); return impl_->motion_state_timestamp; }
+std::optional<uint32_t> RequestRobotState::getBatteryTimestampValue() const { refreshLiveSnapshot(); return impl_->battery_timestamp; }
 
 uint8_t RequestRobotState::hostServerMode() const { return 1; }
 const char* RequestRobotState::robotIp() const { return impl_->robot_ip; }
@@ -425,6 +450,10 @@ void RequestRobotState::setCurrentGaitState(MotionGait gait, int8_t sub_gait) {
     impl_->current_gait = static_cast<uint8_t>(gait);
     impl_->sub_gait = static_cast<uint8_t>(sub_gait);
     impl_->motion_state_timestamp = nowMs();
+}
+
+void RequestRobotState::refreshLiveSnapshot() const {
+    const_cast<Impl*>(impl_.get())->refreshSnapshotFromReceiver();
 }
 
 }  // namespace bpx_sdk

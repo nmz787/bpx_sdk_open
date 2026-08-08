@@ -117,6 +117,8 @@ protected:
     uint16_t sessionId() const;
 
 private:
+    void refreshLiveSnapshot() const;
+
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

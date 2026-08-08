@@ -30,6 +30,7 @@ public:
     void setRobotIp(const char* ip);
     bool sendRequest(const SubscribeStateReq& request) const;
     void printResponse(const SubscribeStateResp& response) const;
+    bool getLatestResponse(SubscribeStateResp* response) const;
     bool bindLocalTcpPort(int port) const;
     bool sendDefaultRequest() const;
     bool sendStateQueryRequest() const;
@@ -40,6 +41,9 @@ public:
     void attachReceiver(RobotStateUdpReceiver* receiver);
 
 private:
+    void clearLatestResponse() const;
+    void storeLatestResponse(const SubscribeStateResp& response) const;
+
     std::string robot_ip_;
     uint16_t server_port_ = 0;
     uint16_t session_id_ = 0;
@@ -52,6 +56,8 @@ private:
     mutable std::atomic<bool> response_loop_running_{false};
     mutable std::mutex response_mutex_;
     mutable std::thread response_thread_;
+    mutable bool has_latest_response_ = false;
+    mutable SubscribeStateResp latest_response_{};
     RobotStateUdpReceiver* receiver_ = nullptr;
 };
 

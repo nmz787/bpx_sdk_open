@@ -46,7 +46,13 @@ import time
 import bpx_sdk
 
 REQUEST_STRUCT = struct.Struct("<HHHHHBBIII")
+UPLOAD_HEAD_STRUCT = struct.Struct("<IIHH")
 JOINT_PACKET_STRUCT = struct.Struct("<" + "f" * 50 + "I")
+STATE_1000HZ_STRUCT = struct.Struct("<" + "f" * 36)
+STATE_200HZ_STRUCT = struct.Struct("<" + "f" * 13)
+STATE_50HZ_STRUCT = struct.Struct("<" + "f" * 13)
+STATE_10HZ_STRUCT = struct.Struct("<BBBBb3xfff")
+STATE_1HZ_STRUCT = struct.Struct("<B3xf" + "b" * 12 + "b" * 12)
 TCP_PORT = 10860
 
 
@@ -67,6 +73,11 @@ def read_exact(conn, size):
             break
         data.extend(chunk)
     return bytes(data)
+
+
+def send_upload_packet(sock, port, seq, timestamp_ms, payload_type, payload):
+    packet = UPLOAD_HEAD_STRUCT.pack(seq, timestamp_ms, len(payload), payload_type) + payload
+    sock.sendto(packet, ("127.0.0.1", port))
 
 
 state_port = reserve_udp_port()
@@ -126,7 +137,51 @@ if not state.connect():
     stop_server = True
     thread.join()
     raise SystemExit("RequestRobotState connect failed")
-state.disconnect()
+
+state_sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+send_upload_packet(
+    state_sender,
+    state_port,
+    11,
+    1001,
+    0x1000,
+    STATE_1000HZ_STRUCT.pack(
+        *([1.25] + [0.0] * 11 + [0.0, -2.5] + [0.0] * 10 + [0.0, 0.0, 3.75] + [0.0] * 9)
+    ),
+)
+send_upload_packet(
+    state_sender,
+    state_port,
+    12,
+    1002,
+    0x0200,
+    STATE_200HZ_STRUCT.pack(0.4, -0.5, 0.6, 0.1, 0.2, 0.3, 0.9, 1.0, 2.0, 3.0, -4.0, -5.0, -6.0),
+)
+send_upload_packet(
+    state_sender,
+    state_port,
+    13,
+    1003,
+    0x0050,
+    STATE_50HZ_STRUCT.pack(0.7, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, -0.9),
+)
+send_upload_packet(
+    state_sender,
+    state_port,
+    14,
+    1004,
+    0x0010,
+    STATE_10HZ_STRUCT.pack(6, 8, 2, 0, 4, 3.0, 1.0, 2.0),
+)
+send_upload_packet(
+    state_sender,
+    state_port,
+    15,
+    1005,
+    0x0001,
+    STATE_1HZ_STRUCT.pack(73, 6.5, *([11] + [0] * 11), *([0, -2] + [0] * 10)),
+)
+state_sender.close()
 
 joint = bpx_sdk.JointLevelControl()
 joint.setRobotIp("127.0.0.1")
@@ -159,6 +214,32 @@ result = {
     "state_port": state_port,
     "joint_state_port": joint_state_port,
     "requests": [],
+    "state_joint_position0": None,
+    "state_joint_velocity1": None,
+    "state_joint_torque2": None,
+    "state_imu_rpy2": None,
+    "state_imu_quat3": None,
+    "state_imu_acc1": None,
+    "state_imu_omega0": None,
+    "state_leg_velocity0": None,
+    "state_leg_position1": None,
+    "state_leg_orientation3": None,
+    "state_leg_omega2": None,
+    "state_motor_temperature0": None,
+    "state_driver_temperature1": None,
+    "state_max_velocity0": None,
+    "state_battery_level": None,
+    "state_battery_current": None,
+    "state_current_motion_state": None,
+    "state_current_gait": None,
+    "state_last_motion_state": None,
+    "state_last_gait": None,
+    "state_sub_gait": None,
+    "state_joint_timestamp": None,
+    "state_imu_timestamp": None,
+    "state_odom_timestamp": None,
+    "state_motion_timestamp": None,
+    "state_battery_timestamp": None,
     "joint_position0": None,
     "joint_velocity1": None,
     "joint_torque2": None,
@@ -171,6 +252,29 @@ result = {
 }
 
 for _ in range(40):
+    state_pos = state.getJointPosition()
+    state_vel = state.getJointVelocity()
+    state_tau = state.getJointTorque()
+    state_imu_rpy = state.getImuRpy()
+    state_imu_quat = state.getImuQuat()
+    state_imu_acc = state.getImuAcc()
+    state_imu_omega = state.getImuOmega()
+    state_leg = state.getLegOdom()
+    state_motor_temperature = state.getMotorTemperature()
+    state_driver_temperature = state.getDriverTemperature()
+    state_max_velocity = state.getMaxVelocity()
+    state_battery_level = state.getBatteryLevel()
+    state_battery_current = state.getBatteryCurrent()
+    state_current_motion_state = state.getCurrentMotionState()
+    state_current_gait = state.getCurrentGait()
+    state_last_motion_state = state.getLastMotionState()
+    state_last_gait = state.getLastGait()
+    state_sub_gait = state.getSubGait()
+    state_joint_timestamp = state.getJointStateTimestamp()
+    state_imu_timestamp = state.getImuTimestamp()
+    state_odom_timestamp = state.getOdometryTimestamp()
+    state_motion_timestamp = state.getMotionStateTimestamp()
+    state_battery_timestamp = state.getBatteryTimestamp()
     pos = joint.getJointPositionHighRate()
     vel = joint.getJointVelocityHighRate()
     tau = joint.getJointTorqueHighRate()
@@ -180,9 +284,71 @@ for _ in range(40):
     imu_omega = joint.getImuOmegaHighRate()
     timestamp = joint.getJointStateTimestampHighRate()
     seq = joint.getJointStateSeqHighRate()
-    if all(value is not None for value in (pos, vel, tau, imu_rpy, imu_quat, imu_acc, imu_omega, timestamp, seq)):
+    if all(
+        value is not None
+        for value in (
+            state_pos,
+            state_vel,
+            state_tau,
+            state_imu_rpy,
+            state_imu_quat,
+            state_imu_acc,
+            state_imu_omega,
+            state_leg,
+            state_motor_temperature,
+            state_driver_temperature,
+            state_max_velocity,
+            state_battery_level,
+            state_battery_current,
+            state_current_motion_state,
+            state_current_gait,
+            state_last_motion_state,
+            state_last_gait,
+            state_sub_gait,
+            state_joint_timestamp,
+            state_imu_timestamp,
+            state_odom_timestamp,
+            state_motion_timestamp,
+            state_battery_timestamp,
+            pos,
+            vel,
+            tau,
+            imu_rpy,
+            imu_quat,
+            imu_acc,
+            imu_omega,
+            timestamp,
+            seq,
+        )
+    ):
         result.update(
             {
+                "state_joint_position0": state_pos[0],
+                "state_joint_velocity1": state_vel[1],
+                "state_joint_torque2": state_tau[2],
+                "state_imu_rpy2": state_imu_rpy[2],
+                "state_imu_quat3": state_imu_quat[3],
+                "state_imu_acc1": state_imu_acc[1],
+                "state_imu_omega0": state_imu_omega[0],
+                "state_leg_velocity0": state_leg["velocity_body"][0],
+                "state_leg_position1": state_leg["position"][1],
+                "state_leg_orientation3": state_leg["orientation"][3],
+                "state_leg_omega2": state_leg["angular_velocity"][2],
+                "state_motor_temperature0": state_motor_temperature[0],
+                "state_driver_temperature1": state_driver_temperature[1],
+                "state_max_velocity0": state_max_velocity[0],
+                "state_battery_level": state_battery_level,
+                "state_battery_current": state_battery_current,
+                "state_current_motion_state": state_current_motion_state,
+                "state_current_gait": state_current_gait,
+                "state_last_motion_state": state_last_motion_state,
+                "state_last_gait": state_last_gait,
+                "state_sub_gait": state_sub_gait,
+                "state_joint_timestamp": state_joint_timestamp,
+                "state_imu_timestamp": state_imu_timestamp,
+                "state_odom_timestamp": state_odom_timestamp,
+                "state_motion_timestamp": state_motion_timestamp,
+                "state_battery_timestamp": state_battery_timestamp,
                 "joint_position0": pos[0],
                 "joint_velocity1": vel[1],
                 "joint_torque2": tau[2],
@@ -197,6 +363,7 @@ for _ in range(40):
         break
     time.sleep(0.025)
 
+state.disconnect()
 joint.disconnect()
 stop_server = True
 thread.join()
@@ -275,6 +442,32 @@ def main() -> int:
             )
 
         expected_feedback = {
+            "state_joint_position0": 1.25,
+            "state_joint_velocity1": -2.5,
+            "state_joint_torque2": 3.75,
+            "state_imu_rpy2": 0.6,
+            "state_imu_quat3": 0.9,
+            "state_imu_acc1": 2.0,
+            "state_imu_omega0": -4.0,
+            "state_leg_velocity0": 0.7,
+            "state_leg_position1": 5.0,
+            "state_leg_orientation3": 0.8,
+            "state_leg_omega2": -0.9,
+            "state_motor_temperature0": 71.0,
+            "state_driver_temperature1": 58.0,
+            "state_max_velocity0": 3.0,
+            "state_battery_level": 73,
+            "state_battery_current": 6.5,
+            "state_current_motion_state": 6,
+            "state_current_gait": 8,
+            "state_last_motion_state": 2,
+            "state_last_gait": 0,
+            "state_sub_gait": 4,
+            "state_joint_timestamp": 1001,
+            "state_imu_timestamp": 1002,
+            "state_odom_timestamp": 1003,
+            "state_motion_timestamp": 1004,
+            "state_battery_timestamp": 1005,
             "joint_position0": 3.25,
             "joint_velocity1": -2.5,
             "joint_torque2": 1.5,
