@@ -270,3 +270,16 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Recover the concrete field-level meaning of the 32-byte TCP subscribe response so `TcpSubscribeClient` can inspect and cache more than the current raw acknowledgement blob.
 - Thread live robot-state UDP updates back through `RequestRobotState` readers after `connect()` instead of only snapshotting receiver state once at connection time.
 - Expand connected-path probes from subscribe handshakes and joint feedback into streamed robot-state packet assertions covering 1Hz/10Hz/50Hz/200Hz/1000Hz uploads across the recovered and shipped runtimes.
+
+## iteration 9
+
+### Done
+
+- Structured the recovered 32-byte TCP subscribe acknowledgement in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/tcp_subscribe_client.cpp` so the client now caches the last response and exposes decoded header/status/reserved/payload-word accessors instead of only dropping a raw blob after receipt.
+- Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/request_robot_state.cpp` so every state/timestamp reader refreshes from the live `RobotStateUdpReceiver` snapshot after `connect()`, allowing streamed 1Hz/10Hz/50Hz/200Hz/1000Hz UDP uploads to flow through `RequestRobotState` continuously rather than only at connection time.
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_connected_runtime_probe.py` to verify structured TCP subscribe response capture plus loopback robot-state streaming coverage for all recovered upload packet families alongside the existing connected joint-feedback assertions.
+
+### Next
+
+- Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
+- Add connected-path side-by-side recovered versus shipped runtime assertions for streamed robot-state traffic after CI can safely host paired fake robot endpoints for both libraries.

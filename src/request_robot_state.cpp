@@ -130,7 +130,39 @@ public:
         if (!state_receiver->getLatestState(&snapshot)) {
             return false;
         }
-        applySnapshot(snapshot);
+        if (!joint_state_timestamp || snapshot.joint_state_timestamp >= *joint_state_timestamp) {
+            joint_position = snapshot.joint_position;
+            joint_velocity = snapshot.joint_velocity;
+            joint_torque = snapshot.joint_torque;
+            joint_state_timestamp = snapshot.joint_state_timestamp;
+        }
+        if (!imu_timestamp || snapshot.imu_timestamp >= *imu_timestamp) {
+            imu_rpy = snapshot.imu_rpy;
+            imu_quat = snapshot.imu_quat;
+            imu_acc = snapshot.imu_acc;
+            imu_omega = snapshot.imu_omega;
+            imu_timestamp = snapshot.imu_timestamp;
+        }
+        if (!odometry_timestamp || snapshot.odometry_timestamp >= *odometry_timestamp) {
+            leg_odom = snapshot.leg_odom;
+            odometry_timestamp = snapshot.odometry_timestamp;
+        }
+        if (!motion_state_timestamp || snapshot.motion_state_timestamp >= *motion_state_timestamp) {
+            max_velocity = snapshot.max_velocity;
+            current_motion_state = snapshot.current_motion_state;
+            current_gait = snapshot.current_gait;
+            last_motion_state = snapshot.last_motion_state;
+            last_gait = snapshot.last_gait;
+            sub_gait = snapshot.sub_gait;
+            motion_state_timestamp = snapshot.motion_state_timestamp;
+        }
+        if (!battery_timestamp || snapshot.battery_timestamp >= *battery_timestamp) {
+            battery_level = snapshot.battery_level;
+            battery_current = snapshot.battery_current;
+            motor_temperature = snapshot.motor_temperature;
+            driver_temperature = snapshot.driver_temperature;
+            battery_timestamp = snapshot.battery_timestamp;
+        }
         return true;
     }
 

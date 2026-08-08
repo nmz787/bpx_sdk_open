@@ -136,12 +136,6 @@ RobotStateSnapshot makeConnectedSnapshot() {
     RobotStateSnapshot snapshot;
     snapshot.max_velocity = gaitVelocityLimit(MotionGait::Walk);
     snapshot.leg_odom.orientation[3] = 1.0f;
-    const uint32_t timestamp = nowMs();
-    snapshot.joint_state_timestamp = timestamp;
-    snapshot.imu_timestamp = timestamp;
-    snapshot.odometry_timestamp = timestamp;
-    snapshot.motion_state_timestamp = timestamp;
-    snapshot.battery_timestamp = timestamp;
     return snapshot;
 }
 
