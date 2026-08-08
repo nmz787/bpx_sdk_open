@@ -107,6 +107,9 @@ RobotStateUdpReceiver::~RobotStateUdpReceiver() {
 
 void RobotStateUdpReceiver::disconnect() {
     running_ = false;
+    if (socket_fd_ >= 0) {
+        ::shutdown(socket_fd_, SHUT_RDWR);
+    }
     if (receive_thread_.joinable()) {
         receive_thread_.join();
     }
