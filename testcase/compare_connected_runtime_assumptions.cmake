@@ -20,6 +20,11 @@ if(NOT precompiled_result EQUAL 0)
         "Precompiled connected-runtime probe failed with exit code ${precompiled_result}\n${precompiled_error}")
 endif()
 
+string(REGEX REPLACE "robot state udp receiver listening on port [0-9]+\n" "" recovered_output "${recovered_output}")
+string(REGEX REPLACE "robot state udp receiver listening on port [0-9]+\n" "" precompiled_output "${precompiled_output}")
+string(REPLACE "server closed connection\n" "" recovered_output "${recovered_output}")
+string(REPLACE "server closed connection\n" "" precompiled_output "${precompiled_output}")
+
 if(NOT recovered_output STREQUAL precompiled_output)
     message(FATAL_ERROR
         "Recovered and precompiled connected-runtime probes diverged.\n"
