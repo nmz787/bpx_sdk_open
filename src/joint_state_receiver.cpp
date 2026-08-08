@@ -56,7 +56,7 @@ bool JointStateReceiver::receiveOnce(JointStatePacket* packet) const {
         recvfrom(socket_fd_, packet, sizeof(*packet), 0,
                  reinterpret_cast<sockaddr*>(&peer), &peer_size);
     if (received < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR ? false : false;
+        return false;
     }
     return received == static_cast<ssize_t>(sizeof(*packet));
 }
