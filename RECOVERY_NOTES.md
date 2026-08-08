@@ -232,8 +232,8 @@ Even without debug sections, the binaries preserve enough metadata to support st
 ### Done
 
 - Replaced the placeholder `RobotStateUdpReceiver::parsePacket(...)` implementation with concrete recovered packet decoding for the observed `0x1000`, `0x0200`, `0x0050`, `0x0010`, and `0x0001` payload families, so recovered runtime snapshots now ingest joint, IMU, odometry, motion-state, battery, and temperature data from packet bytes instead of only seeded defaults.
-- Promoted the recovered upload payload layouts into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h`, including the signed-temperature encoding used by the shipped library's 1Hz battery packet and the compact 10Hz motion-state packet layout that carries current/last motion and gait state plus max-velocity limits.
-- Added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/recovered_packet_parse_probe.cpp` and wired it into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/CMakeLists.txt` so CTest now validates end-to-end parsing of 1Hz, 10Hz, 50Hz, 200Hz, and 1000Hz recovered packets.
+- Promoted the recovered upload payload layouts into `src/recovery_runtime.h`, including the signed-temperature encoding used by the shipped library's 1Hz battery packet and the compact 10Hz motion-state packet layout that carries current/last motion and gait state plus max-velocity limits.
+- Added `testcase/recovered_packet_parse_probe.cpp` and wired it into `testcase/CMakeLists.txt` so CTest now validates end-to-end parsing of 1Hz, 10Hz, 50Hz, 200Hz, and 1000Hz recovered packets.
 
 ### Next
 
