@@ -87,6 +87,38 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
         COMMAND $<TARGET_FILE:transport_socket_probe>
     )
 
+    add_executable(
+        connected_runtime_assumption_probe_recovered
+        connected_runtime_assumption_probe.cpp
+    )
+    target_link_libraries(connected_runtime_assumption_probe_recovered
+        PRIVATE
+            bpx_sdk_recovered
+    )
+    set_target_properties(connected_runtime_assumption_probe_recovered PROPERTIES
+        BUILD_RPATH "$<TARGET_FILE_DIR:bpx_sdk_recovered>"
+    )
+
+    add_executable(
+        connected_runtime_assumption_probe_precompiled
+        connected_runtime_assumption_probe.cpp
+    )
+    target_link_libraries(connected_runtime_assumption_probe_precompiled
+        PRIVATE
+            bpx_sdk_precompiled
+    )
+    set_target_properties(connected_runtime_assumption_probe_precompiled PROPERTIES
+        BUILD_RPATH "$<TARGET_FILE_DIR:bpx_sdk_precompiled>"
+    )
+
+    add_test(
+        NAME compare_connected_runtime_assumptions
+        COMMAND ${CMAKE_COMMAND}
+            -DRECOVERED_PROBE=$<TARGET_FILE:connected_runtime_assumption_probe_recovered>
+            -DPRECOMPILED_PROBE=$<TARGET_FILE:connected_runtime_assumption_probe_precompiled>
+            -P "${CMAKE_CURRENT_LIST_DIR}/compare_connected_runtime_assumptions.cmake"
+    )
+
     if(Python3_Interpreter_FOUND)
         add_test(
             NAME python_connected_runtime_probe

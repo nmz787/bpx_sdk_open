@@ -283,3 +283,14 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 - Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
 - Add connected-path side-by-side recovered versus shipped runtime assertions for streamed robot-state traffic after CI can safely host paired fake robot endpoints for both libraries.
+
+## iteration 10
+
+### Done
+
+- Added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/connected_runtime_assumption_probe.cpp` plus `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/compare_connected_runtime_assumptions.cmake`, which stand up paired loopback fake-robot endpoints, stream robot-state and joint-feedback packets through the public APIs, and compare the recovered versus shipped runtime outputs side-by-side.
+- Wired the new `compare_connected_runtime_assumptions` differential test into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/CMakeLists.txt`, and stopped the Python differential probes from deleting the shared build tree so the connected-path comparison can coexist with the existing recovered-only and Python pre-connect coverage in one CTest pass.
+
+### Next
+
+- Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.

@@ -5,7 +5,6 @@ from __future__ import annotations
 import gc
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -84,6 +83,7 @@ print(json.dumps(result, sort_keys=True))
         capture_output=True,
         text=True,
         env=env,
+        cwd=python_path,
     )
     return json.loads(result.stdout)
 
@@ -118,8 +118,6 @@ def main() -> int:
                 f"--- precompiled ---\n{json.dumps(precompiled, indent=2, sort_keys=True)}"
             )
 
-        shutil.rmtree(repo_root / "build", ignore_errors=True)
-        shutil.rmtree(repo_root / "bpx_sdk_open.egg-info", ignore_errors=True)
         gc.collect()
     return 0
 
