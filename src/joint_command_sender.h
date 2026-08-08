@@ -3,6 +3,7 @@
 
 #include "recovery_runtime.h"
 
+#include <cstdint>
 #include <string>
 
 namespace bpx_sdk {
@@ -26,6 +27,7 @@ public:
 private:
     std::string robot_ip_;
     int socket_fd_ = -1;
+    uint32_t seq_ = 0;
     JointCommandPacket latest_command_;
     JointStateReceiver* receiver_ = nullptr;
 };

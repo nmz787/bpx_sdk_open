@@ -185,28 +185,28 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
 
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) {
-        return true;
+        return false;
     }
 
     if (!bindLocalTcpPort(socket_fd)) {
         closeSocketFd(&socket_fd);
-        return true;
+        return false;
     }
 
     sockaddr_in server_address{};
     if (!fillSockaddr(robot_ip_.c_str(), server_port_, &server_address)) {
         closeSocketFd(&socket_fd);
-        return true;
+        return false;
     }
 
     if (!connectWithTimeout(socket_fd, server_address)) {
         closeSocketFd(&socket_fd);
-        return true;
+        return false;
     }
 
     if (!sendAll(socket_fd, reinterpret_cast<const unsigned char*>(&wire), sizeof(wire))) {
         closeSocketFd(&socket_fd);
-        return true;
+        return false;
     }
 
     SubscribeStateResp response{};

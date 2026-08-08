@@ -184,8 +184,9 @@ void MotionCommandSender::setSubGaitType(unsigned char sub_gait) {
 
 void MotionCommandSender::setZeroPositionsFlag() {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    const uint8_t previous = zero_positions_nonce_;
     ++zero_positions_nonce_;
-    if (zero_positions_nonce_ == velocity_control_enabled_) {
+    if (zero_positions_nonce_ == previous) {
         ++zero_positions_nonce_;
     }
 }

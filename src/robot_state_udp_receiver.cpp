@@ -107,10 +107,10 @@ RobotStateUdpReceiver::~RobotStateUdpReceiver() {
 
 void RobotStateUdpReceiver::disconnect() {
     running_ = false;
-    closeSocket();
     if (receive_thread_.joinable()) {
         receive_thread_.join();
     }
+    closeSocket();
 }
 
 bool RobotStateUdpReceiver::openSocket() {

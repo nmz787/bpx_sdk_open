@@ -67,7 +67,7 @@ bool JointCommandSender::send(const JointCommandPacket& packet) {
         state_packet.joint_velocity = packet.vel;
         state_packet.joint_torque = packet.tff;
         state_packet.timestamp_ms = static_cast<float>(nowMs());
-        state_packet.seq = 1;
+        state_packet.seq = ++seq_;
         receiver_->storeLatest(state_packet);
     }
     return sent || robot_ip_ == DEFAULT_SERVER_IP;
