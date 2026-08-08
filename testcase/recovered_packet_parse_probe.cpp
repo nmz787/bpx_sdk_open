@@ -74,7 +74,7 @@ int main() {
     odom_payload.leg_odom.position[1] = -1.5f;
     odom_payload.leg_odom.position[2] = 0.5f;
     odom_payload.leg_odom.orientation[3] = 1.0f;
-    odom_payload.leg_odom.linear_velocity[0] = 0.8f;
+    odom_payload.leg_odom.velocity_body[0] = 0.8f;
     odom_payload.leg_odom.angular_velocity[2] = -0.4f;
     auto odom_packet = makePacket(kPayloadType50Hz, 13u, 3003u, odom_payload);
     if (!receiver.parsePacket(odom_packet.data(), odom_packet.size(), false)) {
