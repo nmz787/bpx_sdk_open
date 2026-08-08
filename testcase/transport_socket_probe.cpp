@@ -127,16 +127,15 @@ void encodeWord(std::array<uint8_t, 32>* raw, size_t index, uint32_t value) {
 }
 
 template <typename Payload>
-bool sendUploadPacket(int fd, uint16_t port, uint32_t seq, uint32_t timestamp_ms,
-                      uint16_t payload_type, const Payload& payload) {
+bool sendUploadPacket(int fd, uint16_t port, uint32_t timestamp_ms, uint16_t payload_type,
+                      const Payload& payload) {
     struct Packet {
         bpx_sdk::ClientUploadPacketHead head{};
         Payload payload{};
     } packet{};
-    packet.head.seq = seq;
-    packet.head.timestamp_ms = timestamp_ms;
-    packet.head.payload_size = sizeof(Payload);
     packet.head.payload_type = payload_type;
+    packet.head.payload_size = sizeof(Payload);
+    packet.head.timestamp_ms = timestamp_ms;
     packet.payload = payload;
 
     sockaddr_in address{};
@@ -383,11 +382,11 @@ int main() {
         data1.motor_temperature[0] = 11;
         data1.driver_temperature[1] = -2;
 
-        if (!sendUploadPacket(udp_fd, robot_state_port, 11, 1001, 0x1000, data1000) ||
-            !sendUploadPacket(udp_fd, robot_state_port, 12, 1002, 0x0200, data200) ||
-            !sendUploadPacket(udp_fd, robot_state_port, 13, 1003, 0x0050, data50) ||
-            !sendUploadPacket(udp_fd, robot_state_port, 14, 1004, 0x0010, data10) ||
-            !sendUploadPacket(udp_fd, robot_state_port, 15, 1005, 0x0001, data1)) {
+        if (!sendUploadPacket(udp_fd, robot_state_port, 1001, 0x1000, data1000) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 1002, 0x0200, data200) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 1003, 0x0050, data50) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 1004, 0x0010, data10) ||
+            !sendUploadPacket(udp_fd, robot_state_port, 1005, 0x0001, data1)) {
             close(udp_fd);
             state.disconnect();
             return fail("failed to send robot-state upload packets");

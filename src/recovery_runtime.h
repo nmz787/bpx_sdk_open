@@ -64,6 +64,8 @@ struct JointCommandPacket {
 };
 
 struct JointStatePacket {
+    uint32_t seq = 0;
+    float timestamp_ms = 0.0f;
     std::array<float, 12> joint_position{};
     std::array<float, 12> joint_velocity{};
     std::array<float, 12> joint_torque{};
@@ -71,15 +73,12 @@ struct JointStatePacket {
     std::array<float, 4> imu_quat{0.0f, 0.0f, 0.0f, 1.0f};
     std::array<float, 3> imu_acc{};
     std::array<float, 3> imu_omega{};
-    float timestamp_ms = 0.0f;
-    uint32_t seq = 0;
 };
 
 struct ClientUploadPacketHead {
-    uint32_t seq = 0;
-    uint32_t timestamp_ms = 0;
-    uint16_t payload_size = 0;
     uint16_t payload_type = 0;
+    uint16_t payload_size = 0;
+    uint32_t timestamp_ms = 0;
 };
 
 struct ClientUploadData1Hz {
@@ -158,5 +157,9 @@ static_assert(sizeof(bpx_sdk::SubscribeStateReq) == 24,
               "SubscribeStateReq must match the recovered 24-byte wire layout");
 static_assert(sizeof(bpx_sdk::SubscribeStateResp) == 32,
               "SubscribeStateResp must match the recovered 32-byte wire layout");
+static_assert(sizeof(bpx_sdk::ClientUploadPacketHead) == 8,
+              "ClientUploadPacketHead must match the recovered 8-byte wire layout");
+static_assert(sizeof(bpx_sdk::JointStatePacket) == 204,
+              "JointStatePacket must match the recovered 204-byte wire layout");
 
 #endif  // BPX_SDK_RECOVERY_RUNTIME_H_

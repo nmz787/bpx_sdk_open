@@ -46,8 +46,8 @@ import time
 import bpx_sdk
 
 REQUEST_STRUCT = struct.Struct("<HHHHHBBIII")
-UPLOAD_HEAD_STRUCT = struct.Struct("<IIHH")
-JOINT_PACKET_STRUCT = struct.Struct("<" + "f" * 50 + "I")
+UPLOAD_HEAD_STRUCT = struct.Struct("<HHI")
+JOINT_PACKET_STRUCT = struct.Struct("<I" + "f" * 50)
 STATE_1000HZ_STRUCT = struct.Struct("<" + "f" * 36)
 STATE_200HZ_STRUCT = struct.Struct("<" + "f" * 13)
 STATE_50HZ_STRUCT = struct.Struct("<" + "f" * 13)
@@ -75,8 +75,8 @@ def read_exact(conn, size):
     return bytes(data)
 
 
-def send_upload_packet(sock, port, seq, timestamp_ms, payload_type, payload):
-    packet = UPLOAD_HEAD_STRUCT.pack(seq, timestamp_ms, len(payload), payload_type) + payload
+def send_upload_packet(sock, port, timestamp_ms, payload_type, payload):
+    packet = UPLOAD_HEAD_STRUCT.pack(payload_type, len(payload), timestamp_ms) + payload
     sock.sendto(packet, ("127.0.0.1", port))
 
 
@@ -142,7 +142,6 @@ state_sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 send_upload_packet(
     state_sender,
     state_port,
-    11,
     1001,
     0x1000,
     STATE_1000HZ_STRUCT.pack(
@@ -152,7 +151,6 @@ send_upload_packet(
 send_upload_packet(
     state_sender,
     state_port,
-    12,
     1002,
     0x0200,
     STATE_200HZ_STRUCT.pack(0.4, -0.5, 0.6, 0.1, 0.2, 0.3, 0.9, 1.0, 2.0, 3.0, -4.0, -5.0, -6.0),
@@ -160,7 +158,6 @@ send_upload_packet(
 send_upload_packet(
     state_sender,
     state_port,
-    13,
     1003,
     0x0050,
     STATE_50HZ_STRUCT.pack(0.7, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, -0.9),
@@ -168,7 +165,6 @@ send_upload_packet(
 send_upload_packet(
     state_sender,
     state_port,
-    14,
     1004,
     0x0010,
     STATE_10HZ_STRUCT.pack(6, 8, 2, 0, 4, 3.0, 1.0, 2.0),
@@ -176,7 +172,6 @@ send_upload_packet(
 send_upload_packet(
     state_sender,
     state_port,
-    15,
     1005,
     0x0001,
     STATE_1HZ_STRUCT.pack(73, 6.5, *([11] + [0] * 11), *([0, -2] + [0] * 10)),
@@ -194,15 +189,14 @@ if not joint.connect():
 
 joint_sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 packet_values = (
-    [3.25] + [0.0] * 11
+    [77, 4321.0]
+    + [3.25] + [0.0] * 11
     + [0.0, -2.5] + [0.0] * 10
     + [0.0, 0.0, 1.5] + [0.0] * 9
     + [0.4, -0.5, 0.6]
     + [0.1, 0.2, 0.3, 0.9]
     + [1.0, 2.0, 3.0]
     + [-4.0, -5.0, -6.0]
-    + [4321.0]
-    + [77]
 )
 joint_sender.sendto(
     JOINT_PACKET_STRUCT.pack(*packet_values),
@@ -410,7 +404,7 @@ def main() -> int:
             "joint_state_upload_port": 7895,
             "reserved": 0,
             "robot_state_upload_rate_hz": 100,
-            "host_server_mode": 1,
+            "host_server_mode": 4,
             "reserved_padding": 0,
             "timestamp_nonzero": True,
             "reserved_word0": 0,
@@ -422,7 +416,7 @@ def main() -> int:
             "joint_state_upload_port": result["joint_state_port"],
             "reserved": 0,
             "robot_state_upload_rate_hz": 100,
-            "host_server_mode": 2,
+            "host_server_mode": 4,
             "reserved_padding": 0,
             "timestamp_nonzero": True,
             "reserved_word0": 0,

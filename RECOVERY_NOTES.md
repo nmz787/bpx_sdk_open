@@ -295,3 +295,17 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 - Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
 - Recover the shipped library’s loopback robot-state stream packet dialect and host-server-mode semantics so the new cross-library harness can be extended from subscribe-request parity into full streamed robot-state and joint-feedback payload assertions.
+
+## iteration 11
+
+### Done
+
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/connected_runtime_assumption_probe.cpp` from subscribe-request-only coverage into full loopback connected-path parity checks: the recovered and shipped runtimes are now exercised side-by-side against paired fake robot endpoints for streamed 1Hz/10Hz/50Hz/200Hz/1000Hz robot-state uploads plus high-rate joint-feedback packets, and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/compare_connected_runtime_assumptions.cmake` now passes with identical observable outputs from both libraries.
+- Recovered the shipped library’s robot-state UDP upload header dialect in `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/robot_state_udp_receiver.cpp`: `ClientUploadPacketHead` is an 8-byte `{payload_type, payload_size, timestamp_ms}` header rather than the previously assumed 12-byte `{seq, timestamp_ms, payload_size, payload_type}` layout, and the recovered parser/tests now match the shipped binary’s accepted packet framing.
+- Recovered the shipped high-rate joint-feedback wire layout and connected-path host-server-mode behavior: `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h` now places `JointStatePacket`’s `seq` and `timestamp_ms` fields ahead of the 49 float payload values to match the shipped 204-byte packet order, while `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/request_robot_state.cpp` preserves the public pre-connect `hostServerMode()` assumptions but emits the shipped wire value `4` during live subscribe requests for both state-query and joint-control connections.
+- Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp`, `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/recovered_packet_parse_probe.cpp`, and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_connected_runtime_probe.py` so the recovered-only probes and Python connected-path checks serialize the same recovered-on-wire robot-state/joint-feedback packets that the shipped library accepts.
+
+### Next
+
+- Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
+- Extend the same cross-library connected-path comparison coverage into any remaining live transport behaviors that still rely on recovered assumptions rather than shipped-binary parity, starting with motion-control connected flows if they expose additional host-server-mode or streaming differences.

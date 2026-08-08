@@ -32,13 +32,12 @@ int fail(const char* message) {
 }
 
 template <typename T>
-std::vector<unsigned char> makePacket(uint16_t payload_type, uint32_t seq, uint32_t timestamp_ms,
+std::vector<unsigned char> makePacket(uint16_t payload_type, uint32_t timestamp_ms,
                                       const T& payload) {
     bpx_sdk::ClientUploadPacketHead head;
-    head.seq = seq;
-    head.timestamp_ms = timestamp_ms;
-    head.payload_size = static_cast<uint16_t>(sizeof(T));
     head.payload_type = payload_type;
+    head.payload_size = static_cast<uint16_t>(sizeof(T));
+    head.timestamp_ms = timestamp_ms;
 
     std::vector<unsigned char> packet(sizeof(head) + sizeof(T));
     std::memcpy(packet.data(), &head, sizeof(head));
@@ -60,7 +59,7 @@ int main() {
         joint_payload.joint_velocity[i] = static_cast<float>(i) - 1.5f;
         joint_payload.joint_torque[i] = static_cast<float>(i) * 2.0f;
     }
-    auto joint_packet = makePacket(kPayloadType1000Hz, 11u, 1001u, joint_payload);
+    auto joint_packet = makePacket(kPayloadType1000Hz, 1001u, joint_payload);
     if (!receiver.parsePacket(joint_packet.data(), joint_packet.size(), false)) {
         return fail("1000Hz packet parse failed");
     }
@@ -70,7 +69,7 @@ int main() {
     imu_payload.imu_quat = {0.4f, 0.5f, 0.6f, 0.7f};
     imu_payload.imu_acc = {1.1f, 1.2f, 1.3f};
     imu_payload.imu_omega = {-1.0f, -2.0f, -3.0f};
-    auto imu_packet = makePacket(kPayloadType200Hz, 12u, 2002u, imu_payload);
+    auto imu_packet = makePacket(kPayloadType200Hz, 2002u, imu_payload);
     if (!receiver.parsePacket(imu_packet.data(), imu_packet.size(), false)) {
         return fail("200Hz packet parse failed");
     }
@@ -82,7 +81,7 @@ int main() {
     odom_payload.leg_odom.orientation[3] = 1.0f;
     odom_payload.leg_odom.velocity_body[0] = 0.8f;
     odom_payload.leg_odom.angular_velocity[2] = -0.4f;
-    auto odom_packet = makePacket(kPayloadType50Hz, 13u, 3003u, odom_payload);
+    auto odom_packet = makePacket(kPayloadType50Hz, 3003u, odom_payload);
     if (!receiver.parsePacket(odom_packet.data(), odom_packet.size(), false)) {
         return fail("50Hz packet parse failed");
     }
@@ -94,7 +93,7 @@ int main() {
     motion_payload.last_gait = static_cast<uint8_t>(bpx_sdk::MotionGait::Walk);
     motion_payload.sub_gait = -2;
     motion_payload.max_velocity = {3.5f, 1.5f, 2.5f};
-    auto motion_packet = makePacket(kPayloadType10Hz, 14u, 4004u, motion_payload);
+    auto motion_packet = makePacket(kPayloadType10Hz, 4004u, motion_payload);
     if (!receiver.parsePacket(motion_packet.data(), motion_packet.size(), false)) {
         return fail("10Hz packet parse failed");
     }
@@ -106,7 +105,7 @@ int main() {
         battery_payload.motor_temperature[i] = static_cast<int8_t>(i - 3);
         battery_payload.driver_temperature[i] = static_cast<int8_t>(i + 4);
     }
-    auto battery_packet = makePacket(kPayloadType1Hz, 15u, 5005u, battery_payload);
+    auto battery_packet = makePacket(kPayloadType1Hz, 5005u, battery_payload);
     if (!receiver.parsePacket(battery_packet.data(), battery_packet.size(), false)) {
         return fail("1Hz packet parse failed");
     }
@@ -228,7 +227,7 @@ int main() {
     live_address.sin_port = htons(19873);
     live_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    auto live_packet = makePacket(kPayloadType10Hz, 16u, 6006u, motion_payload);
+    auto live_packet = makePacket(kPayloadType10Hz, 6006u, motion_payload);
     if (sendto(udp_fd, live_packet.data(), live_packet.size(), 0,
                reinterpret_cast<const sockaddr*>(&live_address),
                sizeof(live_address)) != static_cast<ssize_t>(live_packet.size())) {
