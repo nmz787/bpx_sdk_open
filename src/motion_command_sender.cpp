@@ -91,14 +91,18 @@ bool MotionCommandSender::sendPacket(MotionCommand command) {
     MotionCommandWirePacket packet;
     packet.seq = static_cast<uint32_t>(seq_.fetch_add(1) + 1);
     packet.command = static_cast<uint8_t>(command);
+    uint8_t gait = 0;
+    int8_t sub_gait = 0;
 
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        packet.gait = gait_;
+        gait = gait_;
+        sub_gait = sub_gait_;
+        packet.gait = gait;
         packet.values = command_values_;
         packet.velocity_control_enabled = velocity_control_enabled_;
         packet.zero_positions_nonce = zero_positions_nonce_;
-        packet.sub_gait = sub_gait_;
+        packet.sub_gait = sub_gait;
         packet.reserved2 = reserved_;
         packet.control_flags = control_flags_;
         packet.reserved_tail = reserved_tail_;
@@ -136,7 +140,7 @@ bool MotionCommandSender::sendPacket(MotionCommand command) {
             case MotionCommand::None:
                 break;
         }
-        applyGaitSelection(&snapshot, static_cast<MotionGait>(gait_), static_cast<int8_t>(sub_gait_));
+        applyGaitSelection(&snapshot, static_cast<MotionGait>(gait), sub_gait);
         receiver_->storeLatest(snapshot);
     }
 

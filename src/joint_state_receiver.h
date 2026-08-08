@@ -4,6 +4,7 @@
 #include "bpx_sdk_config.h"
 #include "recovery_runtime.h"
 
+#include <atomic>
 #include <mutex>
 
 namespace bpx_sdk {
@@ -25,7 +26,7 @@ public:
     bool getLatest(JointStatePacket* packet) const;
 
 private:
-    bool running_ = false;
+    std::atomic<bool> running_{false};
     bool has_packet_ = false;
     uint16_t listen_port_;
     JointStatePacket latest_packet_;
