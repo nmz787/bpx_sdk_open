@@ -62,11 +62,40 @@ struct ClientUploadPacketHead {
     uint16_t payload_type = 0;
 };
 
-struct ClientUploadData1Hz {};
-struct ClientUploadData10Hz {};
-struct ClientUploadData50Hz {};
-struct ClientUploadData200Hz {};
-struct ClientUploadData1000Hz {};
+struct ClientUploadData1Hz {
+    uint8_t battery_level = 0;
+    uint8_t reserved[3]{};
+    float battery_current = 0.0f;
+    std::array<int8_t, 12> motor_temperature{};
+    std::array<int8_t, 12> driver_temperature{};
+};
+
+struct ClientUploadData10Hz {
+    uint8_t current_motion_state = 0;
+    uint8_t current_gait = 0;
+    uint8_t last_motion_state = 0;
+    uint8_t last_gait = 0;
+    int8_t sub_gait = 0;
+    uint8_t reserved[3]{};
+    std::array<float, 3> max_velocity{};
+};
+
+struct ClientUploadData50Hz {
+    LegOdom leg_odom{};
+};
+
+struct ClientUploadData200Hz {
+    std::array<float, 3> imu_rpy{};
+    std::array<float, 4> imu_quat{0.0f, 0.0f, 0.0f, 1.0f};
+    std::array<float, 3> imu_acc{};
+    std::array<float, 3> imu_omega{};
+};
+
+struct ClientUploadData1000Hz {
+    std::array<float, 12> joint_position{};
+    std::array<float, 12> joint_velocity{};
+    std::array<float, 12> joint_torque{};
+};
 
 struct RobotStateSnapshot {
     std::array<float, 12> joint_position{};

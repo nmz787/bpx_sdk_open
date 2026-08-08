@@ -1,9 +1,17 @@
 #include "robot_state_udp_receiver.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace bpx_sdk {
 namespace {
+
+constexpr uint16_t kPayloadType1000Hz = 0x1000;
+constexpr uint16_t kPayloadType200Hz = 0x0200;
+constexpr uint16_t kPayloadType50Hz = 0x0050;
+constexpr uint16_t kPayloadType10Hz = 0x0010;
+constexpr uint16_t kPayloadType1Hz = 0x0001;
+constexpr float kTemperatureBaseCelsius = 60.0f;
 
 template <size_t N>
 bool copyArray(const std::array<float, N>& source, float* target) {
@@ -21,6 +29,67 @@ bool copyScalar(T value, T* target) {
     }
     *target = value;
     return true;
+}
+
+template <typename T>
+bool decodePayload(const unsigned char* data, unsigned long payload_size, T* payload) {
+    if (!data || !payload || payload_size != sizeof(T)) {
+        return false;
+    }
+    std::memcpy(payload, data, sizeof(T));
+    return true;
+}
+
+void applyPayload(const ClientUploadData1000Hz& payload,
+                  const ClientUploadPacketHead& head,
+                  RobotStateSnapshot* snapshot) {
+    snapshot->joint_position = payload.joint_position;
+    snapshot->joint_velocity = payload.joint_velocity;
+    snapshot->joint_torque = payload.joint_torque;
+    snapshot->joint_state_timestamp = head.timestamp_ms;
+}
+
+void applyPayload(const ClientUploadData200Hz& payload,
+                  const ClientUploadPacketHead& head,
+                  RobotStateSnapshot* snapshot) {
+    snapshot->imu_rpy = payload.imu_rpy;
+    snapshot->imu_quat = payload.imu_quat;
+    snapshot->imu_acc = payload.imu_acc;
+    snapshot->imu_omega = payload.imu_omega;
+    snapshot->imu_timestamp = head.timestamp_ms;
+}
+
+void applyPayload(const ClientUploadData50Hz& payload,
+                  const ClientUploadPacketHead& head,
+                  RobotStateSnapshot* snapshot) {
+    snapshot->leg_odom = payload.leg_odom;
+    snapshot->odometry_timestamp = head.timestamp_ms;
+}
+
+void applyPayload(const ClientUploadData10Hz& payload,
+                  const ClientUploadPacketHead& head,
+                  RobotStateSnapshot* snapshot) {
+    snapshot->current_motion_state = payload.current_motion_state;
+    snapshot->current_gait = payload.current_gait;
+    snapshot->last_motion_state = payload.last_motion_state;
+    snapshot->last_gait = payload.last_gait;
+    snapshot->sub_gait = static_cast<uint8_t>(payload.sub_gait);
+    snapshot->max_velocity = payload.max_velocity;
+    snapshot->motion_state_timestamp = head.timestamp_ms;
+}
+
+void applyPayload(const ClientUploadData1Hz& payload,
+                  const ClientUploadPacketHead& head,
+                  RobotStateSnapshot* snapshot) {
+    snapshot->battery_level = payload.battery_level;
+    snapshot->battery_current = payload.battery_current;
+    for (size_t i = 0; i < payload.motor_temperature.size(); ++i) {
+        snapshot->motor_temperature[i] =
+            kTemperatureBaseCelsius + static_cast<float>(payload.motor_temperature[i]);
+        snapshot->driver_temperature[i] =
+            kTemperatureBaseCelsius + static_cast<float>(payload.driver_temperature[i]);
+    }
+    snapshot->battery_timestamp = head.timestamp_ms;
 }
 
 }  // namespace
@@ -43,8 +112,70 @@ void RobotStateUdpReceiver::closeSocket() {
     socket_open_ = false;
 }
 
-bool RobotStateUdpReceiver::parsePacket(const unsigned char*, unsigned long, bool) {
-    return socket_open_;
+bool RobotStateUdpReceiver::parsePacket(const unsigned char* data, unsigned long size, bool) {
+    if (!data || size < sizeof(ClientUploadPacketHead)) {
+        return false;
+    }
+
+    ClientUploadPacketHead head;
+    std::memcpy(&head, data, sizeof(head));
+    if (size - sizeof(head) < head.payload_size) {
+        return false;
+    }
+
+    const unsigned char* payload_data = data + sizeof(head);
+    RobotStateSnapshot snapshot;
+    if (!getLatestState(&snapshot)) {
+        snapshot = makeConnectedSnapshot();
+    }
+
+    switch (head.payload_type) {
+        case kPayloadType1000Hz: {
+            ClientUploadData1000Hz payload;
+            if (!decodePayload(payload_data, head.payload_size, &payload)) {
+                return false;
+            }
+            applyPayload(payload, head, &snapshot);
+            break;
+        }
+        case kPayloadType200Hz: {
+            ClientUploadData200Hz payload;
+            if (!decodePayload(payload_data, head.payload_size, &payload)) {
+                return false;
+            }
+            applyPayload(payload, head, &snapshot);
+            break;
+        }
+        case kPayloadType50Hz: {
+            ClientUploadData50Hz payload;
+            if (!decodePayload(payload_data, head.payload_size, &payload)) {
+                return false;
+            }
+            applyPayload(payload, head, &snapshot);
+            break;
+        }
+        case kPayloadType10Hz: {
+            ClientUploadData10Hz payload;
+            if (!decodePayload(payload_data, head.payload_size, &payload)) {
+                return false;
+            }
+            applyPayload(payload, head, &snapshot);
+            break;
+        }
+        case kPayloadType1Hz: {
+            ClientUploadData1Hz payload;
+            if (!decodePayload(payload_data, head.payload_size, &payload)) {
+                return false;
+            }
+            applyPayload(payload, head, &snapshot);
+            break;
+        }
+        default:
+            return false;
+    }
+
+    storeLatest(snapshot);
+    return true;
 }
 
 void RobotStateUdpReceiver::receiveLoop(bool) {}

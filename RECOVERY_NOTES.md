@@ -226,3 +226,17 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Recover the concrete payload layouts behind the identified upload packet types so `RobotStateUdpReceiver::parsePacket(...)` can populate real `RobotStateSnapshot` data instead of seeded defaults.
 - Disassemble `TcpSubscribeClient::sendRequest(...)`, `MotionCommandSender::sendPacket(...)`, and `JointCommandSender::send(...)` deeply enough to replace the current no-op send paths with real socket serialization.
 - Extend the Python differential probe from pre-connect behavior into connected-path checks once CI can safely host side-by-side recovered and shipped runtimes without hanging on hardware/network operations.
+
+## iteration 6
+
+### Done
+
+- Replaced the placeholder `RobotStateUdpReceiver::parsePacket(...)` implementation with concrete recovered packet decoding for the observed `0x1000`, `0x0200`, `0x0050`, `0x0010`, and `0x0001` payload families, so recovered runtime snapshots now ingest joint, IMU, odometry, motion-state, battery, and temperature data from packet bytes instead of only seeded defaults.
+- Promoted the recovered upload payload layouts into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/recovery_runtime.h`, including the signed-temperature encoding used by the shipped library's 1Hz battery packet and the compact 10Hz motion-state packet layout that carries current/last motion and gait state plus max-velocity limits.
+- Added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/recovered_packet_parse_probe.cpp` and wired it into `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/CMakeLists.txt` so CTest now validates end-to-end parsing of 1Hz, 10Hz, 50Hz, 200Hz, and 1000Hz recovered packets.
+
+### Next
+
+- Recover the socket-open and wire-serialization behavior in `TcpSubscribeClient`, `MotionCommandSender`, and `JointCommandSender` so the recovered runtime can emit the same TCP/UDP request packets as the shipped binaries instead of only accepting synthetic packet input.
+- Thread the recovered packet parsing through the real receive loops once the transport classes can open sockets and ingest live robot traffic without relying on seeded snapshots.
+- Extend the Python differential probe from pre-connect behavior into connected-path checks after the recovered transport stack can be exercised in CI without hanging on hardware/network operations.
