@@ -104,6 +104,15 @@ if(BPX_SDK_BUILD_DIFFERENTIAL_TESTS AND TARGET bpx_sdk_recovered AND TARGET bpx_
                 "${CMAKE_CURRENT_LIST_DIR}/../lib/libbpx_sdk_x86_64.so"
                 "$<TARGET_FILE:bpx_sdk_recovered>"
         )
+
+        add_test(
+            NAME python_compare_connected_runtime
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_LIST_DIR}/python_compare_connected_runtime.py"
+                "${CMAKE_CURRENT_LIST_DIR}/.."
+                "${CMAKE_CURRENT_LIST_DIR}/../lib/libbpx_sdk_x86_64.so"
+                "$<TARGET_FILE:bpx_sdk_recovered>"
+        )
     endif()
 endif()
 

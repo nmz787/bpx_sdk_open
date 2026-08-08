@@ -61,7 +61,7 @@ bool JointCommandSender::send(const JointCommandPacket& packet) {
         }
     }
 
-    if (receiver_) {
+    if (receiver_ && robot_ip_ == DEFAULT_SERVER_IP) {
         JointStatePacket state_packet;
         state_packet.joint_position = packet.pos;
         state_packet.joint_velocity = packet.vel;

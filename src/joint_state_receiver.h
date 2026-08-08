@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <thread>
 
 namespace bpx_sdk {
 
@@ -26,9 +27,11 @@ public:
     bool getLatest(JointStatePacket* packet) const;
 
 private:
-    std::atomic<bool> running_{false};
-    bool has_packet_ = false;
     uint16_t listen_port_;
+    int socket_fd_ = -1;
+    std::atomic<bool> running_{false};
+    std::thread receive_thread_;
+    bool has_packet_ = false;
     JointStatePacket latest_packet_;
     mutable std::mutex mutex_;
 };

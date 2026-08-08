@@ -1,6 +1,7 @@
 #include "../src/joint_command_sender.h"
 #include "../src/motion_command_sender.h"
 #include "../src/tcp_subscribe_client.h"
+#include "../include/joint_level_control.h"
 
 #include <arpa/inet.h>
 #include <array>
@@ -64,6 +65,30 @@ bool bindLoopbackSocket(int fd, uint16_t port, int type) {
         return listen(fd, 1) == 0;
     }
     return true;
+}
+
+uint16_t reserveLoopbackUdpPort() {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        return 0;
+    }
+    sockaddr_in address{};
+    std::memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    if (bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+        close(fd);
+        return 0;
+    }
+    socklen_t size = sizeof(address);
+    if (getsockname(fd, reinterpret_cast<sockaddr*>(&address), &size) != 0) {
+        close(fd);
+        return 0;
+    }
+    const uint16_t port = ntohs(address.sin_port);
+    close(fd);
+    return port;
 }
 
 template <typename T>
@@ -231,6 +256,120 @@ int main() {
             !closeEnough(received.vel[1], -0.75f) ||
             !closeEnough(received.tff[2], 0.5f)) {
             return fail("joint command packet contents were incorrect");
+        }
+    }
+
+    {
+        int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd < 0 || !bindLoopbackSocket(server_fd, kTcpServerPort, SOCK_STREAM)) {
+            return fail("failed to open loopback TCP server for joint feedback");
+        }
+
+        const uint16_t robot_state_port = reserveLoopbackUdpPort();
+        const uint16_t joint_state_port = reserveLoopbackUdpPort();
+        if (robot_state_port == 0 || joint_state_port == 0 || robot_state_port == joint_state_port) {
+            close(server_fd);
+            return fail("failed to reserve loopback UDP ports");
+        }
+
+        std::thread server([&] {
+            sockaddr_in peer{};
+            socklen_t peer_size = sizeof(peer);
+            const int client_fd =
+                accept(server_fd, reinterpret_cast<sockaddr*>(&peer), &peer_size);
+            if (client_fd < 0) {
+                return;
+            }
+            bpx_sdk::SubscribeStateReq request{};
+            if (recvExact(client_fd, &request)) {
+                bpx_sdk::SubscribeStateResp response{};
+                response.raw[0] = 1;
+                send(client_fd, response.raw.data(), response.raw.size(), 0);
+            }
+            close(client_fd);
+        });
+
+        bpx_sdk::JointLevelControl joint;
+        joint.setRobotIp("127.0.0.1");
+        joint.setRobotStateUploadPort(robot_state_port);
+        joint.setJointStateUploadPort(joint_state_port);
+        if (!joint.connect()) {
+            server.join();
+            close(server_fd);
+            return fail("JointLevelControl connect failed");
+        }
+
+        server.join();
+        close(server_fd);
+
+        int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (udp_fd < 0) {
+            joint.disconnect();
+            return fail("failed to open joint feedback UDP sender");
+        }
+
+        sockaddr_in address{};
+        std::memset(&address, 0, sizeof(address));
+        address.sin_family = AF_INET;
+        address.sin_port = htons(joint_state_port);
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        bpx_sdk::JointStatePacket feedback{};
+        feedback.joint_position[0] = 3.25f;
+        feedback.joint_velocity[1] = -2.5f;
+        feedback.joint_torque[2] = 1.5f;
+        feedback.imu_rpy = {0.4f, -0.5f, 0.6f};
+        feedback.imu_quat = {0.1f, 0.2f, 0.3f, 0.9f};
+        feedback.imu_acc = {1.0f, 2.0f, 3.0f};
+        feedback.imu_omega = {-4.0f, -5.0f, -6.0f};
+        feedback.timestamp_ms = 4321.0f;
+        feedback.seq = 77;
+        if (sendto(udp_fd, &feedback, sizeof(feedback), 0,
+                   reinterpret_cast<const sockaddr*>(&address),
+                   sizeof(address)) != static_cast<ssize_t>(sizeof(feedback))) {
+            close(udp_fd);
+            joint.disconnect();
+            return fail("failed to send joint feedback packet");
+        }
+        close(udp_fd);
+
+        bool received_feedback = false;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            float joint_pos[12] = {};
+            float joint_vel[12] = {};
+            float joint_tau[12] = {};
+            float imu_rpy[3] = {};
+            float imu_quat[4] = {};
+            float imu_acc[3] = {};
+            float imu_omega[3] = {};
+            float timestamp = 0.0f;
+            uint32_t seq = 0;
+            if (joint.getJointPositionHighRate(joint_pos) &&
+                joint.getJointVelocityHighRate(joint_vel) &&
+                joint.getJointTorqueHighRate(joint_tau) &&
+                joint.getImuRpyHighRate(imu_rpy) &&
+                joint.getImuQuatHighRate(imu_quat) &&
+                joint.getImuAccHighRate(imu_acc) &&
+                joint.getImuOmegaHighRate(imu_omega) &&
+                joint.getJointStateTimestampHighRate(&timestamp) &&
+                joint.getJointStateSeqHighRate(&seq) &&
+                closeEnough(joint_pos[0], feedback.joint_position[0]) &&
+                closeEnough(joint_vel[1], feedback.joint_velocity[1]) &&
+                closeEnough(joint_tau[2], feedback.joint_torque[2]) &&
+                closeEnough(imu_rpy[2], feedback.imu_rpy[2]) &&
+                closeEnough(imu_quat[3], feedback.imu_quat[3]) &&
+                closeEnough(imu_acc[1], feedback.imu_acc[1]) &&
+                closeEnough(imu_omega[0], feedback.imu_omega[0]) &&
+                closeEnough(timestamp, feedback.timestamp_ms) &&
+                seq == feedback.seq) {
+                received_feedback = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        joint.disconnect();
+        if (!received_feedback) {
+            return fail("JointLevelControl did not consume live joint feedback");
         }
     }
 

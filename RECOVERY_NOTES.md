@@ -256,3 +256,17 @@ Even without debug sections, the binaries preserve enough metadata to support st
 - Recover and validate the concrete 32-byte TCP subscribe response layout so `TcpSubscribeClient` can do more than best-effort emission and can cache/inspect real robot acknowledgements the same way the shipped binary does.
 - Recover the live high-rate joint feedback socket path in `JointStateReceiver` so `JointLevelControl` can consume real incoming joint-state packets instead of only the current synthetic mirror used for offline validation.
 - Expand the Python differential coverage from loopback-safe transport emission into connected-path request/response assertions once CI can stand up paired fake robot endpoints for both TCP subscribe replies and streaming UDP state traffic.
+
+## iteration 8
+
+### Done
+
+- Replaced the placeholder `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_state_receiver.cpp` implementation with the shipped library’s live UDP socket behavior: `JointStateReceiver` now binds its configured upload port, switches the socket into non-blocking mode, receives exact 204-byte `JointStatePacket` payloads from `recvfrom(...)`, and runs the recovered polling loop on a background thread instead of only mirroring cached command values.
+- Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_command_sender.cpp` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_level_control.cpp` so explicit robot endpoints can consume real incoming high-rate joint feedback without the offline synthetic mirror overwriting it, while the default `10.21.20.1` fallback still seeds synthetic feedback for the earlier CI-safe recovery probes.
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` and added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_compare_connected_runtime.py`; C++ and Python coverage now verify loopback TCP subscribe acknowledgements plus live UDP joint-feedback ingestion through `JointLevelControl` against both the recovered and shipped runtimes.
+
+### Next
+
+- Recover the concrete field-level meaning of the 32-byte TCP subscribe response so `TcpSubscribeClient` can inspect and cache more than the current raw acknowledgement blob.
+- Thread live robot-state UDP updates back through `RequestRobotState` readers after `connect()` instead of only snapshotting receiver state once at connection time.
+- Expand connected-path probes from subscribe handshakes and joint feedback into streamed robot-state packet assertions covering 1Hz/10Hz/50Hz/200Hz/1000Hz uploads across the recovered and shipped runtimes.
