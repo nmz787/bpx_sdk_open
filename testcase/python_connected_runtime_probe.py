@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,15 +16,10 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def install_package(repo_root: Path, install_root: Path, runtime_library: Path | None) -> None:
+def install_package(repo_root: Path, install_root: Path, runtime_library: Path) -> None:
     env = os.environ.copy()
-    if runtime_library is None:
-        env.pop("BPX_SDK_PYTHON_RUNTIME_LIBRARY", None)
-        env.pop("BPX_SDK_PYTHON_IMPORT_LIBRARY", None)
-    else:
-        env["BPX_SDK_PYTHON_RUNTIME_LIBRARY"] = str(runtime_library)
-        env["BPX_SDK_PYTHON_IMPORT_LIBRARY"] = str(runtime_library)
-
+    env["BPX_SDK_PYTHON_RUNTIME_LIBRARY"] = str(runtime_library)
+    env["BPX_SDK_PYTHON_IMPORT_LIBRARY"] = str(runtime_library)
     subprocess.check_call(
         [
             sys.executable,
@@ -63,26 +58,22 @@ def reserve_udp_port():
     return port
 
 
-def read_some(conn):
+def read_exact(conn, size):
+    data = bytearray()
     conn.settimeout(1.0)
-    chunks = []
-    while True:
-        try:
-            chunk = conn.recv(256)
-        except socket.timeout:
-            break
+    while len(data) < size:
+        chunk = conn.recv(size - len(data))
         if not chunk:
             break
-        chunks.append(chunk)
-        if len(chunk) < 256:
-            break
-    return b"".join(chunks)
+        data.extend(chunk)
+    return bytes(data)
 
 
 state_port = reserve_udp_port()
 joint_state_port = reserve_udp_port()
 requests = []
 stop_server = False
+server_ready = threading.Event()
 
 
 def serve():
@@ -91,6 +82,7 @@ def serve():
     server.bind(("127.0.0.1", TCP_PORT))
     server.listen(4)
     server.settimeout(0.2)
+    server_ready.set()
     try:
         while not stop_server:
             try:
@@ -98,7 +90,7 @@ def serve():
             except socket.timeout:
                 continue
             with conn:
-                payload = read_some(conn)
+                payload = read_exact(conn, REQUEST_STRUCT.size)
                 if len(payload) == REQUEST_STRUCT.size:
                     request = REQUEST_STRUCT.unpack(payload)
                     requests.append(
@@ -124,11 +116,15 @@ def serve():
 
 thread = threading.Thread(target=serve)
 thread.start()
+if not server_ready.wait(timeout=1.0):
+    raise SystemExit("TCP probe server did not start")
 
 state = bpx_sdk.RequestRobotState()
 state.setRobotIp("127.0.0.1")
 state.setRobotStateUploadPort(state_port)
 if not state.connect():
+    stop_server = True
+    thread.join()
     raise SystemExit("RequestRobotState connect failed")
 state.disconnect()
 
@@ -160,6 +156,8 @@ joint_sender.sendto(
 joint_sender.close()
 
 result = {
+    "state_port": state_port,
+    "joint_state_port": joint_state_port,
     "requests": [],
     "joint_position0": None,
     "joint_velocity1": None,
@@ -218,84 +216,83 @@ print(json.dumps(result, sort_keys=True))
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        fail("usage: python_compare_connected_runtime.py <repo-root> <shipped-library> <recovered-library>")
+    if len(sys.argv) != 3:
+        fail("usage: python_connected_runtime_probe.py <repo-root> <recovered-library>")
 
     repo_root = Path(sys.argv[1]).resolve()
-    shipped_library = Path(sys.argv[2]).resolve()
-    recovered_library = Path(sys.argv[3]).resolve()
+    recovered_library = Path(sys.argv[2]).resolve()
     if not repo_root.exists():
         fail(f"repository root not found: {repo_root}")
-    if not shipped_library.exists():
-        fail(f"shipped library not found: {shipped_library}")
     if not recovered_library.exists():
         fail(f"recovered library not found: {recovered_library}")
 
     with tempfile.TemporaryDirectory(prefix="bpx-sdk-python-connected-") as temp_dir:
         temp_root = Path(temp_dir)
-        shipped_root = temp_root / "shipped"
-        recovered_root = temp_root / "recovered"
-        install_package(repo_root, shipped_root, None)
-        install_package(repo_root, recovered_root, recovered_library)
+        install_root = temp_root / "site"
+        install_package(repo_root, install_root, recovered_library)
 
-        precompiled = probe_behavior(shipped_root)
-        recovered = probe_behavior(recovered_root)
-        if precompiled != recovered:
+        result = probe_behavior(install_root)
+        if len(result["requests"]) < 2:
+            fail("expected at least two subscribe requests from the connected Python probe")
+
+        first_request = result["requests"][0]
+        second_request = result["requests"][1]
+        expected_first = {
+            "session_id": 0,
+            "robot_state_upload_port": result["state_port"],
+            "joint_state_upload_port": 7895,
+            "reserved": 0,
+            "robot_state_upload_rate_hz": 100,
+            "host_server_mode": 1,
+            "reserved_padding": 0,
+            "timestamp_nonzero": True,
+            "reserved_word0": 0,
+            "reserved_word1": 0,
+        }
+        expected_second = {
+            "session_id": 0,
+            "robot_state_upload_port": result["state_port"],
+            "joint_state_upload_port": result["joint_state_port"],
+            "reserved": 0,
+            "robot_state_upload_rate_hz": 100,
+            "host_server_mode": 2,
+            "reserved_padding": 0,
+            "timestamp_nonzero": True,
+            "reserved_word0": 0,
+            "reserved_word1": 0,
+        }
+        if first_request != expected_first:
             fail(
-                "Recovered and precompiled connected Python probes diverged.\n"
-                f"--- recovered ---\n{json.dumps(recovered, indent=2, sort_keys=True)}\n"
-                f"--- precompiled ---\n{json.dumps(precompiled, indent=2, sort_keys=True)}"
+                "unexpected RequestRobotState subscribe request.\n"
+                f"actual={json.dumps(first_request, sort_keys=True)}\n"
+                f"expected={json.dumps(expected_first, sort_keys=True)}"
+            )
+        if second_request != expected_second:
+            fail(
+                "unexpected JointLevelControl subscribe request.\n"
+                f"actual={json.dumps(second_request, sort_keys=True)}\n"
+                f"expected={json.dumps(expected_second, sort_keys=True)}"
             )
 
-        expected_requests = [
-            {
-                "session_id": 0,
-                "robot_state_upload_port": precompiled["requests"][0]["robot_state_upload_port"],
-                "joint_state_upload_port": 7890,
-                "reserved": 0,
-                "robot_state_upload_rate_hz": 100,
-                "host_server_mode": 1,
-                "reserved_padding": 0,
-                "timestamp_nonzero": True,
-                "reserved_word0": 0,
-                "reserved_word1": 0,
-            },
-            {
-                "session_id": 0,
-                "robot_state_upload_port": precompiled["requests"][1]["robot_state_upload_port"],
-                "joint_state_upload_port": precompiled["requests"][1]["joint_state_upload_port"],
-                "reserved": 0,
-                "robot_state_upload_rate_hz": 100,
-                "host_server_mode": 2,
-                "reserved_padding": 0,
-                "timestamp_nonzero": True,
-                "reserved_word0": 0,
-                "reserved_word1": 0,
-            },
-        ]
-        if len(precompiled["requests"]) < 2 or len(recovered["requests"]) < 2:
-            fail("expected at least two subscribe requests from the connected Python probe")
-        for actual, expected in zip(precompiled["requests"][:2], expected_requests):
-            expected = dict(expected)
-            if "robot_state_upload_port" not in actual or "joint_state_upload_port" not in actual:
-                fail("subscribe request was missing expected fields")
-            expected["robot_state_upload_port"] = actual["robot_state_upload_port"]
-            if expected["joint_state_upload_port"] == 7890:
-                expected["joint_state_upload_port"] = actual["joint_state_upload_port"]
-            if actual != expected:
-                fail(
-                    "connected Python probe captured an unexpected subscribe request.\n"
-                    f"actual={json.dumps(actual, sort_keys=True)}\n"
-                    f"expected={json.dumps(expected, sort_keys=True)}"
-                )
+        expected_feedback = {
+            "joint_position0": 3.25,
+            "joint_velocity1": -2.5,
+            "joint_torque2": 1.5,
+            "imu_rpy2": 0.6,
+            "imu_quat3": 0.9,
+            "imu_acc1": 2.0,
+            "imu_omega0": -4.0,
+            "timestamp": 4321.0,
+            "seq": 77,
+        }
+        for key, expected in expected_feedback.items():
+            actual = result[key]
+            if isinstance(expected, float):
+                if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-5):
+                    fail(f"unexpected live joint feedback for {key}: {actual!r} != {expected!r}")
+            elif actual != expected:
+                fail(f"unexpected live joint feedback for {key}: {result[key]!r} != {expected!r}")
 
-        if precompiled["seq"] != 77 or recovered["seq"] != 77:
-            fail("joint feedback sequence mismatch")
-        if precompiled["timestamp"] != 4321.0 or recovered["timestamp"] != 4321.0:
-            fail("joint feedback timestamp mismatch")
-
-        shutil.rmtree(repo_root / "build", ignore_errors=True)
-        shutil.rmtree(repo_root / "bpx_sdk_open.egg-info", ignore_errors=True)
         gc.collect()
     return 0
 

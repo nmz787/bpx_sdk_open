@@ -263,7 +263,7 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 - Replaced the placeholder `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_state_receiver.cpp` implementation with the shipped library’s live UDP socket behavior: `JointStateReceiver` now binds its configured upload port, switches the socket into non-blocking mode, receives exact 204-byte `JointStatePacket` payloads from `recvfrom(...)`, and runs the recovered polling loop on a background thread instead of only mirroring cached command values.
 - Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_command_sender.cpp` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/joint_level_control.cpp` so explicit robot endpoints can consume real incoming high-rate joint feedback without the offline synthetic mirror overwriting it, while the default `10.21.20.1` fallback still seeds synthetic feedback for the earlier CI-safe recovery probes.
-- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` and added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_compare_connected_runtime.py`; C++ and Python coverage now verify loopback TCP subscribe acknowledgements plus live UDP joint-feedback ingestion through `JointLevelControl` against both the recovered and shipped runtimes.
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` and added `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/python_connected_runtime_probe.py`; C++ and Python coverage now verify loopback TCP subscribe acknowledgements plus live UDP joint-feedback ingestion through `JointLevelControl` in the recovered runtime.
 
 ### Next
 
