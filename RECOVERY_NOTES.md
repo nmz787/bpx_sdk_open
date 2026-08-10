@@ -309,3 +309,16 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 - Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
 - Extend the same cross-library connected-path comparison coverage into any remaining live transport behaviors that still rely on recovered assumptions rather than shipped-binary parity, starting with motion-control connected flows if they expose additional host-server-mode or streaming differences.
+
+## iteration 12
+
+### Done
+
+- Extended `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/connected_runtime_assumption_probe.cpp` so the recovered-versus-shipped connected-path harness now covers `MotionLevelControl` alongside state-query and joint-control flows: the loopback comparison now asserts live robot-state streaming plus outgoing velocity and damping command packet parity for explicit connected endpoints.
+- Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/motion_level_control.cpp` so explicit robot endpoints no longer overwrite live streamed robot-state snapshots with the offline fallback gait/motion-state cache; the synthetic connected-state mirroring is now limited to the default `10.21.20.1` fallback path, matching the shipped library’s connected behavior while preserving the earlier offline recovery probes.
+- Updated `/home/runner/work/bpx_sdk_open/bpx_sdk_open/src/motion_command_sender.cpp` and `/home/runner/work/bpx_sdk_open/bpx_sdk_open/testcase/transport_socket_probe.cpp` to match the shipped motion-command wire semantics that the new differential probe exposed: the command byte now follows the raw `MotionState` values on the wire, and damping/stand/sit packets reset to neutral walk framing with zeroed command velocities before transmission.
+
+### Next
+
+- Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
+- Recover the exact semantics of the motion-command sequence and zero-position flag bytes so the connected differential harness can stop normalizing those per-packet fields and compare them at full field-level parity.

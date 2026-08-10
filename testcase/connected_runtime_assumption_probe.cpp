@@ -487,6 +487,7 @@ bool waitForMotionPacket(int fd, float value0, float value1, float value2,
     for (int attempt = 0; attempt < 40; ++attempt) {
         MotionCommandWirePacket packet{};
         if (!recvUdpExact(fd, &packet)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
             continue;
         }
         if (packet.seq > min_seq &&
@@ -522,6 +523,7 @@ bool waitForNextMotionPacket(int fd, uint32_t min_seq, ObservedMotionCommand* ob
     for (int attempt = 0; attempt < 40; ++attempt) {
         MotionCommandWirePacket packet{};
         if (!recvUdpExact(fd, &packet)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
             continue;
         }
         if (packet.seq > min_seq) {
@@ -707,7 +709,8 @@ int main() {
         return fail("failed to open MotionLevelControl UDP listener");
     }
     timeval timeout{};
-    timeout.tv_sec = 1;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 100000;
     setsockopt(motion_udp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     auto motion_server = runSubscribeServer(&request_motion);
