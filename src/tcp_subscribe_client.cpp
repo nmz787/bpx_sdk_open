@@ -203,6 +203,10 @@ bool TcpSubscribeClient::startStateQuery() {
                              response.raw.size())) {
                     break;
                 }
+                // printResponse is a no-op in the shipped binary; the 32-byte
+                // ack is received and discarded. storeLatestResponse is
+                // intentionally not called here — only sendStateQueryRequest
+                // caches a response for getLatestResponse callers.
                 printResponse(response);
             }
             close(socket_fd);

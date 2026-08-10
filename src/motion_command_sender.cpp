@@ -225,10 +225,13 @@ void MotionCommandSender::setSubGaitType(unsigned char sub_gait) {
 }
 
 void MotionCommandSender::setZeroPositionsFlag() {
+    // Thread-local PRNG: each calling thread has an independent mt19937 seeded
+    // from random_device. The shipped binary (0x2682a) generates the random
+    // byte before acquiring the mutex, then locks only for the compare-and-store.
     thread_local std::mt19937 prng{std::random_device{}()};
     thread_local std::uniform_int_distribution<int> dist{0, 255};
-    std::lock_guard<std::mutex> lock(state_mutex_);
     uint8_t next = static_cast<uint8_t>(dist(prng));
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (next == zero_positions_nonce_) {
         ++next;
     }
