@@ -66,6 +66,22 @@ MotionCommand motionCommandFromState(uint8_t command) {
     }
 }
 
+uint8_t wireCommandFromMotionCommand(MotionCommand command) {
+    switch (command) {
+        case MotionCommand::StandUp:
+            return static_cast<uint8_t>(MotionState::StandingUp);
+        case MotionCommand::SitDown:
+            return static_cast<uint8_t>(MotionState::SitDown);
+        case MotionCommand::Damping:
+            return static_cast<uint8_t>(MotionState::Passive);
+        case MotionCommand::Velocity:
+            return static_cast<uint8_t>(MotionState::Motion);
+        case MotionCommand::None:
+        default:
+            return 0;
+    }
+}
+
 }  // namespace
 
 MotionCommandSender::MotionCommandSender()
@@ -90,7 +106,7 @@ bool MotionCommandSender::sendLatest() {
 bool MotionCommandSender::sendPacket(MotionCommand command) {
     MotionCommandWirePacket packet;
     packet.seq = static_cast<uint32_t>(seq_.fetch_add(1) + 1);
-    packet.command = static_cast<uint8_t>(command);
+    packet.command = wireCommandFromMotionCommand(command);
     uint8_t gait = 0;
     int8_t sub_gait = 0;
 
@@ -148,14 +164,35 @@ bool MotionCommandSender::sendPacket(MotionCommand command) {
 }
 
 bool MotionCommandSender::sendDamping() {
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        command_ = static_cast<uint8_t>(MotionState::Passive);
+        gait_ = static_cast<uint8_t>(MotionGait::Walk);
+        sub_gait_ = 0;
+        command_values_.fill(0.0f);
+    }
     return sendPacket(MotionCommand::Damping);
 }
 
 bool MotionCommandSender::sendSitDown() {
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        command_ = static_cast<uint8_t>(MotionState::SitDown);
+        gait_ = static_cast<uint8_t>(MotionGait::Walk);
+        sub_gait_ = 0;
+        command_values_.fill(0.0f);
+    }
     return sendPacket(MotionCommand::SitDown);
 }
 
 bool MotionCommandSender::sendStandUp() {
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        command_ = static_cast<uint8_t>(MotionState::StandingUp);
+        gait_ = static_cast<uint8_t>(MotionGait::Walk);
+        sub_gait_ = 0;
+        command_values_.fill(0.0f);
+    }
     return sendPacket(MotionCommand::StandUp);
 }
 

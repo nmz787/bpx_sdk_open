@@ -3,6 +3,7 @@
 #include "motion_command_sender.h"
 #include "recovery_runtime.h"
 
+#include <cstring>
 #include <memory>
 
 namespace bpx_sdk {
@@ -18,6 +19,10 @@ constexpr int8_t kSubGaitRightFlip = -2;
 constexpr int8_t kSubGaitPronk = kRecoveredSharedNegativeSubGait;
 constexpr int8_t kSubGaitBound = kRecoveredSharedPositiveSubGait;
 constexpr int8_t kSubGaitPace = 2;
+
+bool usesOfflineFallback(const char* robot_ip) {
+    return robot_ip && std::strcmp(robot_ip, DEFAULT_SERVER_IP) == 0;
+}
 
 }  // namespace
 
@@ -50,9 +55,11 @@ bool MotionLevelControl::connect() {
     if (!impl_->sender->connect(impl_->motion_command_rate_hz)) {
         return false;
     }
-    setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
-    setCurrentMotionStateValue(MotionState::Passive);
-    setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
+    if (usesOfflineFallback(robotIp())) {
+        setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
+        setCurrentMotionStateValue(MotionState::Passive);
+        setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
+    }
     return true;
 }
 
@@ -84,7 +91,7 @@ void MotionLevelControl::setWalk() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -98,7 +105,7 @@ void MotionLevelControl::setRunning() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -112,7 +119,7 @@ void MotionLevelControl::setLeftFlip() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -126,7 +133,7 @@ void MotionLevelControl::setRightFlip() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -140,7 +147,7 @@ void MotionLevelControl::setBipedal() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -154,7 +161,7 @@ void MotionLevelControl::setInvBipedal() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -168,7 +175,7 @@ void MotionLevelControl::setPronk() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -182,7 +189,7 @@ void MotionLevelControl::setPace() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -196,7 +203,7 @@ void MotionLevelControl::setBound() {
         impl_->sender->setGait(static_cast<int>(impl_->selected_gait), static_cast<uint8_t>(impl_->selected_sub_gait));
         impl_->sender->sendLatest();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -211,7 +218,7 @@ bool MotionLevelControl::setVelocity(float x, float y, float yaw) {
     if (impl_->sender) {
         sent = impl_->sender->sendVelocity(x, y, yaw);
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Motion);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -224,7 +231,7 @@ bool MotionLevelControl::setStandUp() {
     if (impl_->sender) {
         sent = impl_->sender->sendStandUp();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::StandingUp);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -237,7 +244,7 @@ bool MotionLevelControl::setSitDown() {
     if (impl_->sender) {
         sent = impl_->sender->sendSitDown();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::SitDown);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));
@@ -250,7 +257,7 @@ bool MotionLevelControl::setDamping() {
     if (impl_->sender) {
         sent = impl_->sender->sendDamping();
     }
-    if (isConnected()) {
+    if (isConnected() && usesOfflineFallback(robotIp())) {
         setCurrentGaitState(impl_->selected_gait, impl_->selected_sub_gait);
         setCurrentMotionStateValue(MotionState::Passive);
         setMaxVelocityState(gaitVelocityLimit(impl_->selected_gait));

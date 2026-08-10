@@ -248,7 +248,7 @@ int main() {
             return fail("motion UDP listener did not receive a packet");
         }
         if (motion_packet.seq == 0 ||
-            motion_packet.command != static_cast<uint8_t>(bpx_sdk::MotionCommand::Velocity) ||
+            motion_packet.command != static_cast<uint8_t>(bpx_sdk::MotionState::Motion) ||
             motion_packet.gait != static_cast<uint8_t>(bpx_sdk::MotionGait::Running) ||
             !closeEnough(motion_packet.values[0], 0.2f) ||
             !closeEnough(motion_packet.values[1], -0.4f) ||

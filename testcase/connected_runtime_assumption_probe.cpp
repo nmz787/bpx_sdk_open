@@ -1,4 +1,5 @@
 #include "../include/joint_level_control.h"
+#include "../include/motion_level_control.h"
 #include "../include/request_robot_state.h"
 #include "../src/recovery_runtime.h"
 
@@ -18,6 +19,7 @@
 namespace {
 
 constexpr uint16_t kTcpServerPort = 10860;
+constexpr uint16_t kMotionCommandPort = 9527;
 constexpr uint16_t kPayloadType1000Hz = 0x1000;
 constexpr uint16_t kPayloadType200Hz = 0x0200;
 constexpr uint16_t kPayloadType50Hz = 0x0050;
@@ -38,7 +40,24 @@ void printValue(const char* key, T value) {
     std::cout << key << '=' << value << '\n';
 }
 
-bool bindLoopbackSocket(int fd, uint16_t port) {
+struct MotionCommandWirePacket {
+    uint32_t seq = 0;
+    uint8_t command = 0;
+    uint8_t gait = 0;
+    uint8_t reserved0 = 0;
+    uint8_t reserved1 = 0;
+    std::array<float, 6> values{};
+    uint8_t velocity_control_enabled = 0;
+    uint8_t zero_positions_nonce = 0;
+    uint8_t sub_gait = 0;
+    uint8_t reserved2 = 0;
+    uint32_t control_flags = 0;
+    std::array<uint8_t, 16> reserved_tail{};
+};
+
+static_assert(sizeof(MotionCommandWirePacket) == 56, "unexpected motion packet size");
+
+bool bindLoopbackSocket(int fd, uint16_t port, int type) {
     const int enabled = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
     sockaddr_in address{};
@@ -46,8 +65,13 @@ bool bindLoopbackSocket(int fd, uint16_t port) {
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     address.sin_port = htons(port);
-    return bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0 &&
-           listen(fd, 1) == 0;
+    if (bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+        return false;
+    }
+    if (type == SOCK_STREAM) {
+        return listen(fd, 1) == 0;
+    }
+    return true;
 }
 
 uint16_t reserveLoopbackUdpPort() {
@@ -86,6 +110,14 @@ bool recvExact(int fd, T* value) {
         received += static_cast<size_t>(chunk);
     }
     return true;
+}
+
+template <typename T>
+bool recvUdpExact(int fd, T* value) {
+    if (!value) {
+        return false;
+    }
+    return recv(fd, value, sizeof(T), 0) == static_cast<ssize_t>(sizeof(T));
 }
 
 template <typename Payload>
@@ -166,6 +198,26 @@ struct ObservedHighRateState {
     uint32_t seq = 0;
 };
 
+struct ObservedMotionCommand {
+    uint32_t seq = 0;
+    uint8_t command = 0;
+    uint8_t gait = 0;
+    uint8_t velocity_control_enabled = 0;
+    uint8_t zero_positions_nonce = 0;
+    uint8_t sub_gait = 0;
+    uint32_t control_flags = 0;
+    float value0 = 0.0f;
+    float value1 = 0.0f;
+    float value2 = 0.0f;
+};
+
+struct ObservedMotionState {
+    uint8_t current_motion_state = 0;
+    uint8_t current_gait = 0;
+    uint8_t sub_gait = 0;
+    float max_velocity0 = 0.0f;
+};
+
 StatePayloads makeStatePayloads() {
     StatePayloads payloads{};
     payloads.data1000.joint_position[0] = 1.25f;
@@ -212,7 +264,7 @@ bpx_sdk::JointStatePacket makeJointFeedback() {
 
 std::pair<int, std::thread> runSubscribeServer(SubscribeCapture* request) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0 || !bindLoopbackSocket(server_fd, kTcpServerPort)) {
+    if (server_fd < 0 || !bindLoopbackSocket(server_fd, kTcpServerPort, SOCK_STREAM)) {
         return {-1, std::thread()};
     }
     return {
@@ -254,7 +306,7 @@ void closeServer(std::pair<int, std::thread>* server) {
 }
 
 bool waitForRobotState(const bpx_sdk::RequestRobotState& state, const StatePayloads& payloads,
-                       ObservedState* observed) {
+                       ObservedState* observed, bool require_motion_fields = true) {
     if (!observed) {
         return false;
     }
@@ -282,6 +334,31 @@ bool waitForRobotState(const bpx_sdk::RequestRobotState& state, const StatePaylo
         uint32_t odometry_timestamp = 0;
         uint32_t motion_timestamp = 0;
         uint32_t battery_timestamp = 0;
+        const bool has_max_velocity = state.getMaxVelocity(max_velocity);
+        const bool has_current_motion_state = state.getCurrentMotionState(&current_motion_state);
+        const bool has_current_gait = state.getCurrentGait(&current_gait);
+        const bool has_last_motion_state = state.getLastMotionState(&last_motion_state);
+        const bool has_last_gait = state.getLastGait(&last_gait);
+        const bool has_sub_gait = state.getSubGait(&sub_gait);
+        const bool has_motion_timestamp = state.getMotionStateTimestamp(&motion_timestamp);
+
+        const bool motion_fields_match =
+            !require_motion_fields ||
+            (has_max_velocity &&
+             has_current_motion_state &&
+             has_current_gait &&
+             has_last_motion_state &&
+             has_last_gait &&
+             has_sub_gait &&
+             has_motion_timestamp &&
+             closeEnough(max_velocity[0], payloads.data10.max_velocity[0]) &&
+             current_motion_state == payloads.data10.current_motion_state &&
+             current_gait == payloads.data10.current_gait &&
+             last_motion_state == payloads.data10.last_motion_state &&
+             last_gait == payloads.data10.last_gait &&
+             sub_gait == static_cast<uint8_t>(payloads.data10.sub_gait) &&
+             motion_timestamp == 1004);
+
         if (state.getJointPosition(joint_pos) &&
             state.getJointVelocity(joint_vel) &&
             state.getJointTorque(joint_tau) &&
@@ -292,18 +369,11 @@ bool waitForRobotState(const bpx_sdk::RequestRobotState& state, const StatePaylo
             state.getLegOdom(&leg_odom) &&
             state.getMotorTemperature(motor_temperature) &&
             state.getDriverTemperature(driver_temperature) &&
-            state.getMaxVelocity(max_velocity) &&
             state.getBatteryLevel(&battery_level) &&
             state.getBatteryCurrent(&battery_current) &&
-            state.getCurrentMotionState(&current_motion_state) &&
-            state.getCurrentGait(&current_gait) &&
-            state.getLastMotionState(&last_motion_state) &&
-            state.getLastGait(&last_gait) &&
-            state.getSubGait(&sub_gait) &&
             state.getJointStateTimestamp(&joint_timestamp) &&
             state.getImuTimestamp(&imu_timestamp) &&
             state.getOdometryTimestamp(&odometry_timestamp) &&
-            state.getMotionStateTimestamp(&motion_timestamp) &&
             state.getBatteryTimestamp(&battery_timestamp) &&
             closeEnough(joint_pos[0], payloads.data1000.joint_position[0]) &&
             closeEnough(joint_vel[1], payloads.data1000.joint_velocity[1]) &&
@@ -319,19 +389,13 @@ bool waitForRobotState(const bpx_sdk::RequestRobotState& state, const StatePaylo
                         payloads.data50.leg_odom.angular_velocity[2]) &&
             closeEnough(motor_temperature[0], 71.0f) &&
             closeEnough(driver_temperature[1], 58.0f) &&
-            closeEnough(max_velocity[0], payloads.data10.max_velocity[0]) &&
             battery_level == payloads.data1.battery_level &&
             closeEnough(battery_current, payloads.data1.battery_current) &&
-            current_motion_state == payloads.data10.current_motion_state &&
-            current_gait == payloads.data10.current_gait &&
-            last_motion_state == payloads.data10.last_motion_state &&
-            last_gait == payloads.data10.last_gait &&
-            sub_gait == static_cast<uint8_t>(payloads.data10.sub_gait) &&
             joint_timestamp == 1001 &&
             imu_timestamp == 1002 &&
             odometry_timestamp == 1003 &&
-            motion_timestamp == 1004 &&
-            battery_timestamp == 1005) {
+            battery_timestamp == 1005 &&
+            motion_fields_match) {
             observed->joint_position0 = joint_pos[0];
             observed->joint_velocity1 = joint_vel[1];
             observed->joint_torque2 = joint_tau[2];
@@ -415,6 +479,93 @@ bool waitForJointHighRateState(const bpx_sdk::JointLevelControl& joint,
     return false;
 }
 
+bool waitForMotionPacket(int fd, float value0, float value1, float value2,
+                         uint32_t min_seq, ObservedMotionCommand* observed) {
+    if (!observed) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        MotionCommandWirePacket packet{};
+        if (!recvUdpExact(fd, &packet)) {
+            continue;
+        }
+        if (packet.seq > min_seq &&
+            closeEnough(packet.values[0], value0) &&
+            closeEnough(packet.values[1], value1) &&
+            closeEnough(packet.values[2], value2)) {
+            observed->seq = packet.seq;
+            observed->command = packet.command;
+            observed->gait = packet.gait;
+            observed->velocity_control_enabled = packet.velocity_control_enabled;
+            observed->zero_positions_nonce = packet.zero_positions_nonce;
+            observed->sub_gait = packet.sub_gait;
+            observed->control_flags = packet.control_flags;
+            observed->value0 = packet.values[0];
+            observed->value1 = packet.values[1];
+            observed->value2 = packet.values[2];
+            return true;
+        }
+    }
+    return false;
+}
+
+void drainMotionPackets(int fd) {
+    MotionCommandWirePacket packet{};
+    while (recv(fd, &packet, sizeof(packet), MSG_DONTWAIT) == static_cast<ssize_t>(sizeof(packet))) {
+    }
+}
+
+bool waitForNextMotionPacket(int fd, uint32_t min_seq, ObservedMotionCommand* observed) {
+    if (!observed) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        MotionCommandWirePacket packet{};
+        if (!recvUdpExact(fd, &packet)) {
+            continue;
+        }
+        if (packet.seq > min_seq) {
+            observed->seq = packet.seq;
+            observed->command = packet.command;
+            observed->gait = packet.gait;
+            observed->velocity_control_enabled = packet.velocity_control_enabled;
+            observed->zero_positions_nonce = packet.zero_positions_nonce;
+            observed->sub_gait = packet.sub_gait;
+            observed->control_flags = packet.control_flags;
+            observed->value0 = packet.values[0];
+            observed->value1 = packet.values[1];
+            observed->value2 = packet.values[2];
+            return true;
+        }
+    }
+    return false;
+}
+
+bool waitForMotionState(const bpx_sdk::MotionLevelControl& motion,
+                        ObservedMotionState* observed) {
+    if (!observed) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        uint8_t read_motion_state = 0;
+        uint8_t read_gait = 0;
+        uint8_t read_sub_gait = 0;
+        float max_velocity[3] = {};
+        if (motion.getCurrentMotionState(&read_motion_state) &&
+            motion.getCurrentGait(&read_gait) &&
+            motion.getSubGait(&read_sub_gait) &&
+            motion.getMaxVelocity(max_velocity)) {
+            observed->current_motion_state = read_motion_state;
+            observed->current_gait = read_gait;
+            observed->sub_gait = read_sub_gait;
+            observed->max_velocity0 = max_velocity[0];
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    return false;
+}
+
 void printObservedState(const char* prefix, const ObservedState& observed) {
     printValue((std::string(prefix) + ".joint_position0").c_str(), observed.joint_position0);
     printValue((std::string(prefix) + ".joint_velocity1").c_str(), observed.joint_velocity1);
@@ -465,6 +616,30 @@ void printObservedHighRateState(const char* prefix, const ObservedHighRateState&
     printValue((std::string(prefix) + ".imu_omega0").c_str(), observed.imu_omega0);
     printValue((std::string(prefix) + ".timestamp").c_str(), observed.timestamp);
     printValue((std::string(prefix) + ".seq").c_str(), observed.seq);
+}
+
+void printObservedMotionCommand(const char* prefix, const ObservedMotionCommand& observed) {
+    printValue((std::string(prefix) + ".has_seq").c_str(), static_cast<int>(observed.seq != 0));
+    printValue((std::string(prefix) + ".command").c_str(), static_cast<int>(observed.command));
+    printValue((std::string(prefix) + ".gait").c_str(), static_cast<int>(observed.gait));
+    printValue((std::string(prefix) + ".velocity_control_enabled").c_str(),
+               static_cast<int>(observed.velocity_control_enabled));
+    printValue((std::string(prefix) + ".zero_positions_flag_set").c_str(),
+               static_cast<int>(observed.zero_positions_nonce != 0));
+    printValue((std::string(prefix) + ".sub_gait").c_str(), static_cast<int>(observed.sub_gait));
+    printValue((std::string(prefix) + ".control_flags").c_str(), observed.control_flags);
+    printValue((std::string(prefix) + ".value0").c_str(), observed.value0);
+    printValue((std::string(prefix) + ".value1").c_str(), observed.value1);
+    printValue((std::string(prefix) + ".value2").c_str(), observed.value2);
+}
+
+void printObservedMotionState(const char* prefix, const ObservedMotionState& observed) {
+    printValue((std::string(prefix) + ".current_motion_state").c_str(),
+               static_cast<int>(observed.current_motion_state));
+    printValue((std::string(prefix) + ".current_gait").c_str(),
+               static_cast<int>(observed.current_gait));
+    printValue((std::string(prefix) + ".sub_gait").c_str(), static_cast<int>(observed.sub_gait));
+    printValue((std::string(prefix) + ".max_velocity0").c_str(), observed.max_velocity0);
 }
 
 }  // namespace
@@ -518,6 +693,117 @@ int main() {
         return fail("RequestRobotState did not surface loopback robot-state traffic");
     }
     state.disconnect();
+
+    SubscribeCapture request_motion{};
+    const uint16_t motion_robot_state_port = reserveLoopbackUdpPort();
+    if (motion_robot_state_port == 0) {
+        return fail("failed to reserve MotionLevelControl robot-state UDP port");
+    }
+    int motion_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (motion_udp_fd < 0 || !bindLoopbackSocket(motion_udp_fd, kMotionCommandPort, SOCK_DGRAM)) {
+        if (motion_udp_fd >= 0) {
+            close(motion_udp_fd);
+        }
+        return fail("failed to open MotionLevelControl UDP listener");
+    }
+    timeval timeout{};
+    timeout.tv_sec = 1;
+    setsockopt(motion_udp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    auto motion_server = runSubscribeServer(&request_motion);
+    if (motion_server.first < 0) {
+        close(motion_udp_fd);
+        return fail("failed to start MotionLevelControl subscribe server");
+    }
+
+    bpx_sdk::MotionLevelControl motion;
+    motion.setRobotIp("127.0.0.1");
+    motion.setRobotStateUploadPort(motion_robot_state_port);
+    motion.setMotionCommandRate(20);
+    if (!motion.connect()) {
+        closeServer(&motion_server);
+        close(motion_udp_fd);
+        return fail("MotionLevelControl connect failed");
+    }
+    closeServer(&motion_server);
+
+    int motion_state_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (motion_state_udp_fd < 0) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("failed to open MotionLevelControl robot-state sender");
+    }
+    if (!sendUploadPacket(motion_state_udp_fd, motion_robot_state_port, 1001, kPayloadType1000Hz,
+                          state_payloads.data1000) ||
+        !sendUploadPacket(motion_state_udp_fd, motion_robot_state_port, 1002, kPayloadType200Hz,
+                          state_payloads.data200) ||
+        !sendUploadPacket(motion_state_udp_fd, motion_robot_state_port, 1003, kPayloadType50Hz,
+                          state_payloads.data50) ||
+        !sendUploadPacket(motion_state_udp_fd, motion_robot_state_port, 1004, kPayloadType10Hz,
+                          state_payloads.data10) ||
+        !sendUploadPacket(motion_state_udp_fd, motion_robot_state_port, 1005, kPayloadType1Hz,
+                          state_payloads.data1)) {
+        close(motion_state_udp_fd);
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("failed to send MotionLevelControl robot-state packets");
+    }
+    close(motion_state_udp_fd);
+
+    ObservedState observed_motion_stream_state{};
+    if (!waitForRobotState(motion, state_payloads, &observed_motion_stream_state, false)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl did not surface loopback robot-state traffic");
+    }
+
+    motion.setVelocityControlFlag(true);
+    motion.setRunning();
+    motion.setZeroPositionsFlag();
+    if (!motion.setVelocity(0.25f, -0.5f, 0.75f)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl velocity command failed");
+    }
+
+    ObservedMotionCommand observed_velocity_command{};
+    if (!waitForMotionPacket(motion_udp_fd, 0.25f, -0.5f, 0.75f, 0,
+                             &observed_velocity_command)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl did not emit expected velocity packet");
+    }
+
+    ObservedMotionState observed_motion_state{};
+    if (!waitForMotionState(motion, &observed_motion_state)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl state did not reflect running velocity command");
+    }
+
+    drainMotionPackets(motion_udp_fd);
+    if (!motion.setDamping()) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl damping command failed");
+    }
+
+    ObservedMotionCommand observed_damping_command{};
+    if (!waitForNextMotionPacket(motion_udp_fd, observed_velocity_command.seq,
+                                 &observed_damping_command)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl did not emit expected damping packet");
+    }
+
+    ObservedMotionState observed_damping_state{};
+    if (!waitForMotionState(motion, &observed_damping_state)) {
+        motion.disconnect();
+        close(motion_udp_fd);
+        return fail("MotionLevelControl state did not reflect damping command");
+    }
+    motion.disconnect();
+    close(motion_udp_fd);
 
     SubscribeCapture request_joint{};
     const uint16_t joint_robot_state_port = reserveLoopbackUdpPort();
@@ -599,13 +885,27 @@ int main() {
     printObservedState("request0.state", observed_state);
 
     printValue("request1.robot_state_port_matches",
+               static_cast<int>(request_motion.robot_state_upload_port ==
+                                motion_robot_state_port));
+    printValue("request1.joint_state_port_matches",
+               static_cast<int>(request_motion.joint_state_upload_port ==
+                                bpx_sdk::DEFAULT_CLIENT_JOINT_STATE_UDP_PORT));
+    printValue("request1.robot_state_upload_rate_hz", request_motion.robot_state_upload_rate_hz);
+    printValue("request1.host_server_mode", static_cast<int>(request_motion.host_server_mode));
+    printObservedState("request1.state", observed_motion_stream_state);
+    printObservedMotionCommand("request1.velocity", observed_velocity_command);
+    printObservedMotionState("request1.motion_state", observed_motion_state);
+    printObservedMotionCommand("request1.damping", observed_damping_command);
+    printObservedMotionState("request1.damping_state", observed_damping_state);
+
+    printValue("request2.robot_state_port_matches",
                static_cast<int>(request_joint.robot_state_upload_port ==
                                 joint_robot_state_port));
-    printValue("request1.joint_state_port_matches",
+    printValue("request2.joint_state_port_matches",
                static_cast<int>(request_joint.joint_state_upload_port == joint_state_port));
-    printValue("request1.robot_state_upload_rate_hz", request_joint.robot_state_upload_rate_hz);
-    printValue("request1.host_server_mode", static_cast<int>(request_joint.host_server_mode));
-    printObservedState("request1.state", observed_joint_state);
-    printObservedHighRateState("request1.high_rate", observed_high_rate);
+    printValue("request2.robot_state_upload_rate_hz", request_joint.robot_state_upload_rate_hz);
+    printValue("request2.host_server_mode", static_cast<int>(request_joint.host_server_mode));
+    printObservedState("request2.state", observed_joint_state);
+    printObservedHighRateState("request2.high_rate", observed_high_rate);
     return 0;
 }
