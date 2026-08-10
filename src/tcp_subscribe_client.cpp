@@ -29,6 +29,12 @@ void closeSocketFd(int* fd) {
     *fd = -1;
 }
 
+void shutdownSocketFd(int fd) {
+    if (fd >= 0) {
+        shutdown(fd, SHUT_RDWR);
+    }
+}
+
 bool setReuseAddr(int fd) {
     const int enabled = 1;
     return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)) == 0;
@@ -116,8 +122,14 @@ TcpSubscribeClient::~TcpSubscribeClient() {
 }
 
 void TcpSubscribeClient::disconnect() {
-    closeSocketFd(&response_socket_fd_);
     response_loop_running_ = false;
+    {
+        std::lock_guard<std::mutex> lock(response_mutex_);
+        shutdownSocketFd(response_socket_fd_);
+    }
+    if (response_thread_.joinable()) {
+        response_thread_.join();
+    }
     clearLatestResponse();
 }
 
@@ -130,15 +142,80 @@ void TcpSubscribeClient::setTcpLocalPort(uint16_t local_port) {
 }
 
 bool TcpSubscribeClient::startStateQuery() {
+    if (response_loop_running_.exchange(true)) {
+        return true;
+    }
+
+    if (response_thread_.joinable()) {
+        response_thread_.join();
+    }
+
     SubscribeStateReq request;
     request.session_id = session_id_;
     request.robot_state_upload_port = robot_state_upload_port_;
     request.joint_state_upload_port = joint_state_upload_port_;
     request.robot_state_upload_rate_hz = robot_state_upload_rate_hz_;
     request.host_server_mode = host_server_mode_;
-    if (!sendRequest(request)) {
-        return false;
+    request.request_timestamp_ms = nowMs();
+
+    if (robot_ip_ != DEFAULT_SERVER_IP) {
+        int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (socket_fd < 0) {
+            response_loop_running_ = false;
+            return false;
+        }
+
+        if (!bindLocalTcpPort(socket_fd)) {
+            closeSocketFd(&socket_fd);
+            response_loop_running_ = false;
+            return false;
+        }
+
+        sockaddr_in server_address{};
+        if (!fillSockaddr(robot_ip_.c_str(), server_port_, &server_address)) {
+            closeSocketFd(&socket_fd);
+            response_loop_running_ = false;
+            return false;
+        }
+
+        if (!connectWithTimeout(socket_fd, server_address)) {
+            closeSocketFd(&socket_fd);
+            response_loop_running_ = false;
+            return false;
+        }
+
+        if (!sendAll(socket_fd, reinterpret_cast<const unsigned char*>(&request),
+                     sizeof(request))) {
+            closeSocketFd(&socket_fd);
+            response_loop_running_ = false;
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(response_mutex_);
+            response_socket_fd_ = socket_fd;
+        }
+
+        response_thread_ = std::thread([this, socket_fd]() {
+            while (response_loop_running_) {
+                SubscribeStateResp response{};
+                if (!recvAll(socket_fd, response.raw.data(),
+                             response.raw.size())) {
+                    break;
+                }
+                printResponse(response);
+            }
+            close(socket_fd);
+            {
+                std::lock_guard<std::mutex> lock(response_mutex_);
+                if (response_socket_fd_ == socket_fd) {
+                    response_socket_fd_ = -1;
+                }
+            }
+            response_loop_running_ = false;
+        });
     }
+
     if (receiver_) {
         receiver_->storeLatest(makeConnectedSnapshot());
     }

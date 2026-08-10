@@ -266,6 +266,9 @@ int main() {
         if (!recvUdpExact(udp_fd, &loop_packet)) {
             return fail("motion sender runLoop did not emit a packet");
         }
+        if (loop_packet.seq <= motion_packet.seq) {
+            return fail("runLoop packet seq must be greater than sendVelocity packet seq");
+        }
         sender.disconnect();
         sender.close();
         close(udp_fd);
@@ -589,6 +592,70 @@ int main() {
         joint.disconnect();
         if (!received_feedback) {
             return fail("JointLevelControl did not consume live joint feedback");
+        }
+    }
+
+    {
+        // Test startStateQuery persistent TCP connection:
+        // The server keeps the connection open and sends multiple ack responses
+        // while the client's background recv loop processes them, then
+        // disconnect() shuts down cleanly.
+        int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd < 0 || !bindLoopbackSocket(server_fd, kTcpServerPort, SOCK_STREAM)) {
+            return fail("failed to open loopback TCP server for startStateQuery");
+        }
+
+        constexpr int kNumAcks = 3;
+        bool server_recv_ok = false;
+        std::thread server([&] {
+            sockaddr_in peer{};
+            socklen_t peer_size = sizeof(peer);
+            const int client_fd =
+                accept(server_fd, reinterpret_cast<sockaddr*>(&peer), &peer_size);
+            if (client_fd < 0) {
+                return;
+            }
+            bpx_sdk::SubscribeStateReq request{};
+            if (!recvExact(client_fd, &request)) {
+                close(client_fd);
+                return;
+            }
+            server_recv_ok = true;
+            // Send multiple ack packets to exercise the recv loop
+            for (int i = 0; i < kNumAcks; ++i) {
+                bpx_sdk::SubscribeStateResp response{};
+                if (send(client_fd, response.raw.data(), response.raw.size(), 0) !=
+                    static_cast<ssize_t>(response.raw.size())) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            // Wait for client to close its end (triggered by disconnect())
+            char drain[1];
+            recv(client_fd, drain, sizeof(drain), 0);
+            close(client_fd);
+        });
+
+        bpx_sdk::TcpSubscribeClient client;
+        client.setRobotIp("127.0.0.1");
+        client.setTcpLocalPort(kTcpLocalPort);
+        client.setSessionId(9);
+        client.setRobotStateUploadPort(19874);
+        client.setJointStateUploadPort(17896);
+        client.setRobotStateUploadRate(100);
+        client.setHostServerMode(1);
+        if (!client.startStateQuery()) {
+            return fail("startStateQuery reported failure");
+        }
+        // Let the background recv loop process the acks
+        std::this_thread::sleep_for(std::chrono::milliseconds(kNumAcks * 10 + 50));
+        client.disconnect();
+
+        server.join();
+        close(server_fd);
+
+        if (!server_recv_ok) {
+            return fail("startStateQuery server did not receive subscribe request");
         }
     }
 

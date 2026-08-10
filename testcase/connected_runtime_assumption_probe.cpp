@@ -900,6 +900,8 @@ int main() {
     printObservedMotionState("request1.motion_state", observed_motion_state);
     printObservedMotionCommand("request1.damping", observed_damping_command);
     printObservedMotionState("request1.damping_state", observed_damping_state);
+    printValue("request1.damping_seq_gt_velocity_seq",
+               static_cast<int>(observed_damping_command.seq > observed_velocity_command.seq));
 
     printValue("request2.robot_state_port_matches",
                static_cast<int>(request_joint.robot_state_upload_port ==

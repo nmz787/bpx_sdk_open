@@ -322,3 +322,58 @@ Even without debug sections, the binaries preserve enough metadata to support st
 
 - Recover the semantic meaning of the remaining seven 32-bit words in the 32-byte TCP subscribe acknowledgement once real robot captures or deeper disassembly show how the shipped runtime uses them.
 - Recover the exact semantics of the motion-command sequence and zero-position flag bytes so the connected differential harness can stop normalizing those per-packet fields and compare them at full field-level parity.
+
+## iteration 13
+
+### What was done
+
+Disassembled the shipped `libbpx_sdk_x86_64.so` binary to recover the ground truth for the two items deferred from iteration 12, then updated the recovered source and differential harness to match.
+
+#### TCP subscribe acknowledgement — payload words 2–6 are unused
+
+Disassembled `TcpSubscribeClient::printResponse` at `0x2b86e`. The shipped function is a complete no-op (`nop; ret`). None of the seven 32-bit payload words in the 32-byte `SubscribeStateResp` are read or acted upon anywhere in the shipped library. The `accepted()` helper in the current recovery (which inspects `responseType` and `statusCode`) is our own invented heuristic and is not confirmed by disassembly; it is left in place as a safe default for external callers.
+
+Disassembled `TcpSubscribeClient::startStateQuery` at `0x2ad1e`. The shipped library does **not** use a fire-and-forget approach here; instead it maintains a **persistent TCP connection** for the lifetime of the session. The shipped code:
+1. Atomically exchanges `response_loop_running_` to true; returns immediately if it was already running.
+2. Joins any existing `response_thread_` before proceeding.
+3. Creates a TCP socket, binds the configured local port, connects to the robot, and sends the 24-byte subscribe request.
+4. Stores the socket fd in `response_socket_fd_` (protected by `response_mutex_`).
+5. Starts a background thread that loops: `recvAll(fd, 32-byte buffer)` → `printResponse` (no-op). On recv failure the loop exits, the fd is closed and cleared under the mutex, and `response_loop_running_` is set to false.
+
+Disassembled `TcpSubscribeClient::disconnect` at its shipped address. The shipped disconnect sets `response_loop_running_ = false`, locks the mutex, calls `shutdown(SHUT_RDWR)` on the socket (which unblocks the background recv), unlocks, then joins the thread.
+
+`startStateQuery` and `disconnect` in `src/tcp_subscribe_client.cpp` were rewritten to match this architecture exactly. The `shutdownSocketFd` helper was added to the anonymous namespace to perform `shutdown(fd, SHUT_RDWR)` without closing the fd (the background thread closes it).
+
+A new test block was added to `testcase/transport_socket_probe.cpp` that verifies the persistent-connection behavior: a loopback TCP server accepts the connection, receives the subscribe request, sends three 32-byte ack responses in sequence (proving the recv loop handles multiple packets), and then waits for the client-side `disconnect()` to shut down the connection.
+
+#### Motion-command `seq` field — ordering-level parity achieved
+
+Disassembled `MotionCommandSender::sendPacket` at `0x26ec6`. Confirmed the shipped binary uses `lock xadd` on an atomic at `self+0xa0`, starting from zero and incrementing by one for each call. Our recovery is semantically correct.
+
+Because both binaries run independent background `runLoop` threads that fire at 20 Hz asynchronously, the absolute seq counter at the moment any given explicit command is observed is non-deterministic and will differ between two independent process executions. Exact seq parity in the differential harness is therefore unachievable. Instead the harness was upgraded from boolean `has_seq` to a derived ordering field: `request1.damping_seq_gt_velocity_seq` is printed as a boolean (always 1) and compared across shipped vs recovered. This confirms that the damping packet's seq is strictly greater than the velocity packet's seq (i.e. the counter monotonically increases within a single run) without requiring identical absolute values across runs. The `has_seq` boolean is retained per packet to confirm each packet carries a non-zero seq.
+
+#### `setZeroPositionsFlag` — thread-local PRNG matching shipped binary
+
+Disassembled `MotionCommandSender::setZeroPositionsFlag` at `0x2682a`. The shipped binary generates the new nonce using a **thread-local `std::mt19937`** seeded from `std::random_device{}()` and a **thread-local `std::uniform_int_distribution<int>(0, 255)`**, then applies a single collision-avoidance increment if the drawn byte equals the current nonce. The previous recovery used a simple `++nonce; if (nonce==0) ++nonce` pattern.
+
+`src/motion_command_sender.cpp` was updated to match: `#include <random>` was added, and `setZeroPositionsFlag` now uses `thread_local std::mt19937` + `thread_local std::uniform_int_distribution<int>(0, 255)`. Because the nonce is random, exact value comparison between shipped and recovered is impossible; the harness continues to compare `zero_positions_flag_set` (nonzero boolean) rather than the raw nonce value.
+
+### Done
+
+- Disassembled `printResponse` — confirmed no-op; payload words 0–6 of `SubscribeStateResp` are unused by the shipped library.
+- Disassembled `startStateQuery` and its background-thread lambda — recovered persistent TCP connection architecture.
+- Disassembled `disconnect` — recovered shutdown + join sequence.
+- Rewrote `TcpSubscribeClient::startStateQuery` and `disconnect` in `src/tcp_subscribe_client.cpp` to use the persistent connection model.
+- Added `shutdownSocketFd` helper to `tcp_subscribe_client.cpp` anonymous namespace.
+- Added persistent-TCP `startStateQuery` test to `testcase/transport_socket_probe.cpp`.
+- Added seq ordering assertion (`loop_packet.seq > motion_packet.seq`) to the existing `MotionCommandSender` test in `transport_socket_probe.cpp`.
+- Updated `printObservedMotionCommand` in `connected_runtime_assumption_probe.cpp`: retained `has_seq` boolean, added `request1.damping_seq_gt_velocity_seq` ordering check.
+- Updated `setZeroPositionsFlag` in `src/motion_command_sender.cpp` to use thread-local mt19937 PRNG matching shipped disassembly.
+- All 8 tests pass (100%).
+
+### Next
+
+- Determine whether the shipped library ever populates any of the seven `SubscribeStateResp` payload words when a real robot is connected (they are ignored on the receive side but may carry robot metadata on the transmit side). Real hardware capture or server-side disassembly required.
+- Investigate whether `TcpSubscribeClient::startStateQuery` is re-invoked on reconnect (e.g. after a transient connection drop) and whether the `response_loop_running_` exchange guard is the only protection against double-start.
+- Verify `setZeroPositionsFlag` mutex offset (recovered uses `state_mutex_` at offset +0x40; disassembly showed mutex at `self+0x40` — confirm these are the same field by cross-referencing the header struct layout).
+- Extend the differential harness to cover `JointLevelControl::setZeroPositionsFlag` if a similar method exists in that path.

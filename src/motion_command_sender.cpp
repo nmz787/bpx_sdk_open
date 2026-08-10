@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstring>
 #include <netinet/in.h>
+#include <random>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -224,11 +225,14 @@ void MotionCommandSender::setSubGaitType(unsigned char sub_gait) {
 }
 
 void MotionCommandSender::setZeroPositionsFlag() {
+    thread_local std::mt19937 prng{std::random_device{}()};
+    thread_local std::uniform_int_distribution<int> dist{0, 255};
     std::lock_guard<std::mutex> lock(state_mutex_);
-    ++zero_positions_nonce_;
-    if (zero_positions_nonce_ == 0) {
-        ++zero_positions_nonce_;
+    uint8_t next = static_cast<uint8_t>(dist(prng));
+    if (next == zero_positions_nonce_) {
+        ++next;
     }
+    zero_positions_nonce_ = next;
 }
 
 void MotionCommandSender::setVelocityControlFlag(bool enabled) {
