@@ -4,11 +4,8 @@
 #include "robot_state_udp_receiver.h"
 
 #include <arpa/inet.h>
-#include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <netinet/in.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -50,65 +47,11 @@ bool fillSockaddr(const char* ip, uint16_t port, sockaddr_in* address) {
     return inet_pton(AF_INET, ip, &address->sin_addr) == 1;
 }
 
-bool receiveResponseBestEffort(int fd, SubscribeStateResp* response) {
-    if (fd < 0 || !response) {
-        return false;
-    }
-    timeval timeout{};
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 200000;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    unsigned char* buffer = response->raw.data();
-    size_t received = 0;
-    while (received < response->raw.size()) {
-        const ssize_t chunk = recv(fd, buffer + received, response->raw.size() - received, 0);
-        if (chunk <= 0) {
-            return false;
-        }
-        received += static_cast<size_t>(chunk);
-    }
-    return true;
-}
-
-bool connectWithTimeout(int fd, const sockaddr_in& address) {
-    const int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
-        return false;
-    }
-
-    const int result =
-        connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
-    if (result == 0) {
-        fcntl(fd, F_SETFL, flags);
-        return true;
-    }
-    if (errno != EINPROGRESS) {
-        fcntl(fd, F_SETFL, flags);
-        return false;
-    }
-
-    fd_set write_fds;
-    FD_ZERO(&write_fds);
-    FD_SET(fd, &write_fds);
-    timeval timeout{};
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 200000;
-    const int ready = select(fd + 1, nullptr, &write_fds, nullptr, &timeout);
-    if (ready <= 0) {
-        fcntl(fd, F_SETFL, flags);
-        return false;
-    }
-
-    int socket_error = 0;
-    socklen_t socket_error_size = sizeof(socket_error);
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &socket_error, &socket_error_size) != 0 ||
-        socket_error != 0) {
-        fcntl(fd, F_SETFL, flags);
-        return false;
-    }
-
-    fcntl(fd, F_SETFL, flags);
-    return true;
+bool connectBlocking(int fd, const sockaddr_in& address) {
+    // The shipped binary (startStateQuery at 0x2affd, sendRequest at 0x2bc19)
+    // calls connect() directly with no nonblocking setup or timeout.
+    return connect(fd, reinterpret_cast<const sockaddr*>(&address),
+                   sizeof(address)) == 0;
 }
 
 }  // namespace
@@ -178,7 +121,7 @@ bool TcpSubscribeClient::startStateQuery() {
             return false;
         }
 
-        if (!connectWithTimeout(socket_fd, server_address)) {
+        if (!connectBlocking(socket_fd, server_address)) {
             closeSocketFd(&socket_fd);
             response_loop_running_ = false;
             return false;
@@ -281,7 +224,7 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
         return false;
     }
 
-    if (!connectWithTimeout(socket_fd, server_address)) {
+    if (!connectBlocking(socket_fd, server_address)) {
         closeSocketFd(&socket_fd);
         return false;
     }
@@ -291,9 +234,19 @@ bool TcpSubscribeClient::sendRequest(const SubscribeStateReq& request) const {
         return false;
     }
 
-    SubscribeStateResp response{};
-    if (receiveResponseBestEffort(socket_fd, &response)) {
-        storeLatestResponse(response);
+    // Shipped binary (sendRequest at 0x2bd0b): after sending, loop recvAll+printResponse
+    // as long as response_loop_running_ is true. When false (the common case before
+    // startStateQuery is called, or after disconnect), close the socket and return true.
+    // storeLatestResponse is never called here; the shipped binary discards the response.
+    // Known limitation (matches shipped binary behaviour): socket_fd is a local variable,
+    // so disconnect() cannot unblock recvAll here; the loop exits only when
+    // response_loop_running_ is cleared and the server closes the connection.
+    while (response_loop_running_) {
+        SubscribeStateResp response{};
+        if (!recvAll(socket_fd, response.raw.data(), response.raw.size())) {
+            closeSocketFd(&socket_fd);
+            return false;
+        }
         printResponse(response);
     }
     closeSocketFd(&socket_fd);
@@ -388,12 +341,6 @@ void TcpSubscribeClient::clearLatestResponse() const {
     std::lock_guard<std::mutex> lock(response_mutex_);
     latest_response_ = SubscribeStateResp{};
     has_latest_response_ = false;
-}
-
-void TcpSubscribeClient::storeLatestResponse(const SubscribeStateResp& response) const {
-    std::lock_guard<std::mutex> lock(response_mutex_);
-    latest_response_ = response;
-    has_latest_response_ = true;
 }
 
 }  // namespace bpx_sdk

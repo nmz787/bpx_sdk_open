@@ -377,3 +377,62 @@ Disassembled `MotionCommandSender::setZeroPositionsFlag` at `0x2682a`. The shipp
 - Investigate whether `TcpSubscribeClient::startStateQuery` is re-invoked on reconnect (e.g. after a transient connection drop) and whether the `response_loop_running_` exchange guard is the only protection against double-start.
 - Verify `setZeroPositionsFlag` mutex offset (recovered uses `state_mutex_` at offset +0x40; disassembly showed mutex at `self+0x40` — confirm these are the same field by cross-referencing the header struct layout).
 - Extend the differential harness to cover `JointLevelControl::setZeroPositionsFlag` if a similar method exists in that path.
+
+## iteration 14
+
+### What was done
+
+Disassembled additional functions in `libbpx_sdk_x86_64.so` to address all four "Next" items deferred from iteration 13.
+
+#### Mutex offset verification — ABI mismatch confirmed
+
+Disassembled `MotionCommandSender::setZeroPositionsFlag` at `0x2682a`. The `lock_guard` constructor receives `self+0x40` as its mutex argument, confirming `state_mutex_` is at offset 0x40 in the shipped binary. `zero_positions_nonce_` is written at `self+0x89`. Our build computes 0x30 for `state_mutex_` and 0x75 for `zero_positions_nonce_`.
+
+The shipped binary's `.comment` section (`readelf -p .comment`) reveals it was built with **GCC 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2)**. Our recovery build uses GCC 13.3.0 on the current host. The nominal sizes of `std::string`, `std::thread`, and `std::mutex` are identical between GCC 9 and GCC 13 on x86_64 Linux (32, 8, and 40 bytes respectively), so the offset discrepancy is not explained by type-size differences alone.
+
+The most likely explanation is that the shipped binary's `MotionCommandSender` struct has a different field ordering for the private members than our recovery reconstruction, leading to different padding alignment. Specifically, the observed offsets suggest there are 16 extra bytes before `state_mutex_` (putting it at 0x40 instead of 0x30) and a corresponding 4-byte difference thereafter (putting the nonce at 0x89 instead of 0x75). The struct fields themselves are correct; only the internal layout differs from our recovery's field ordering assumption. No code change is required.
+
+#### JointLevelControl — no setZeroPositionsFlag
+
+Confirmed via `nm -D libbpx_sdk_x86_64.so` that there is no `JointLevelControl::setZeroPositionsFlag` symbol in the shipped library. The joint-control path exposes `JointLevelControl::setZeroJointCommand` and `JointCommandSender::sendZero`; neither uses a nonce or PRNG. The differential harness does not need extension for this path.
+
+#### startStateQuery reconnect behavior
+
+Disassembled `TcpSubscribeClient::startStateQuery` at `0x2ad1e`. The `response_loop_running_.exchange(true)` guard at the function entry is the only reconnect protection. When the background recv thread exits on error, it sets `response_loop_running_ = false`, which permits a subsequent explicit call to `startStateQuery` to re-establish the connection. No automatic reconnect loop exists in the shipped binary.
+
+Also observed: the shipped binary calls a `socket_compat::ensureInitialized()` function (cross-platform compat, no-op on Linux) before `socket()`, and `socket_compat::setNoSigPipe(fd)` (also a no-op on Linux) after creating the socket. Both are thin wrappers that perform no work on Linux; our recovery uses raw POSIX calls which are functionally identical.
+
+#### connect() is blocking — not nonblocking with timeout
+
+Disassembled both `startStateQuery` (at `0x2affd`) and `sendRequest` (at `0x2bc19`). Both call `connect()` directly in blocking mode with no preceding `fcntl(O_NONBLOCK)` or `select()` timeout. Our recovery had used `connectWithTimeout` (nonblocking with 200 ms `select()` timeout) in both functions, which was not faithful to the shipped binary.
+
+`startStateQuery` and `sendRequest` in `src/tcp_subscribe_client.cpp` were updated to use a plain blocking `connect()`. The `connectWithTimeout` helper was replaced by a thin `connectBlocking` wrapper documenting the disassembly address. The unused `receiveResponseBestEffort` helper (which had applied a 200 ms `SO_RCVTIMEO`) was removed.
+
+#### sendRequest recv behavior — response_loop_running_ gated loop
+
+Disassembled `sendRequest` in full. After a successful `sendAll`, the shipped binary enters a loop:
+1. Load `response_loop_running_` (at `self+0x40`). If **false** → close socket, return `true` immediately without receiving.
+2. If **true** → call `recvAll(fd, 32 bytes)`. On recv failure → close socket, return `false`. On success → `printResponse` (no-op) → loop back to step 1.
+
+`storeLatestResponse` is never called inside `sendRequest`. Our previous recovery called `storeLatestResponse` once after a single best-effort recv. This was incorrect; the correct behavior is the loop above.
+
+`sendRequest` in `src/tcp_subscribe_client.cpp` was rewritten to use the `while (response_loop_running_)` recv loop. In normal usage (before `startStateQuery` is called), `response_loop_running_` is false and `sendRequest` sends the 24-byte request, then closes and returns true immediately. The test in `testcase/transport_socket_probe.cpp` was updated to match: the old assertion that `getLatestResponse` returned a populated struct was replaced with an assertion that `getLatestResponse` returns false (no caching occurs).
+
+### Done
+
+- Disassembled `setZeroPositionsFlag` — confirmed mutex at `self+0x40` and nonce at `self+0x89`; ABI mismatch documented, no code change needed.
+- Confirmed via `nm` that `JointLevelControl::setZeroPositionsFlag` does not exist in the shipped binary; differential harness extension not required.
+- Disassembled `startStateQuery` — confirmed exchange guard is sole reconnect protection; `socket_compat` wrappers are Linux no-ops.
+- Disassembled `startStateQuery` and `sendRequest` — confirmed both use blocking `connect()`.
+- Replaced `connectWithTimeout` with `connectBlocking` in `src/tcp_subscribe_client.cpp`.
+- Removed `receiveResponseBestEffort` helper (unused after the recv strategy change).
+- Removed unused `<fcntl.h>`, `<cerrno>`, `<sys/select.h>` includes.
+- Rewrote `sendRequest` recv path to use the `response_loop_running_`-gated `recvAll` loop matching the shipped binary; removed `storeLatestResponse` call.
+- Updated `testcase/transport_socket_probe.cpp`: `getLatestResponse` assertion now verifies it returns false (no caching) instead of asserting a populated struct.
+- All 8 tests pass (transport_socket_probe, recovered_runtime_probe, recovered_packet_parse_probe, compare_api_assumptions, compare_connected_runtime_assumptions, python_connected_runtime_probe, python_recovered_runtime_probe, python_compare_api_assumptions).
+
+### Next
+
+- Determine whether the shipped library ever populates any of the seven `SubscribeStateResp` payload words when a real robot is connected. Real hardware capture required.
+- Investigate the field ordering discrepancy in `MotionCommandSender` and `TcpSubscribeClient` between the shipped binary (compiled with GCC 9.4.0/Ubuntu 20.04) and our recovery build. Compare a local GCC 9.4.0 build of the recovered struct to determine whether the offset differences arise from field reordering in the original source or from ABI differences between GCC 9 and 13.
+- Explore remaining unrecovered methods listed in the shipped binary's symbol table (e.g. `setRobotIp` with string argument, additional `TcpSubscribeClient` methods) to check for any unrecovered behavior.

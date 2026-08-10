@@ -42,7 +42,6 @@ public:
 
 private:
     void clearLatestResponse() const;
-    void storeLatestResponse(const SubscribeStateResp& response) const;
 
     std::string robot_ip_;
     uint16_t server_port_ = 0;
